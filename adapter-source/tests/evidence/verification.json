@@ -1,0 +1,53 @@
+{
+  "adapter_version": "2.3.0",
+  "connector_version": "0.2.0",
+  "backup": "/home/zhaoyunzyq/qizhen-franka-staging/backups/before-artifact-delivery-20261019_082307",
+  "tests": {
+    "adapter_arm64": {
+      "run": 64,
+      "passed": 64
+    },
+    "adapter_amd64": {
+      "run": 64,
+      "passed": 63,
+      "skipped": 1,
+      "skip_reason": "YAML covered by ARM64"
+    },
+    "connector": {
+      "passed": 28
+    },
+    "platform": {
+      "passed": 507,
+      "skipped": 56
+    },
+    "web": {
+      "passed": 457,
+      "affected_after_final_media_error_change": 12
+    },
+    "real_postgres_minio_delivery": "passed; synthetic vendor assets only",
+    "browser": "Chromium decoded H.264 frames; keyboard, desktop and mobile passed",
+    "packaged_adapter_connector_smoke": "passed; real handler/broker, vendor fixture only"
+  },
+  "protected_files": {
+    "src/stop_guard.py": "00b1dde05f4e1ae554ea603e786e67bc70b2e2f49ad0079c8ee1a1ed65d01760",
+    "src/vendor_launch.py": "530c400f9d08d3111bb2fc0acf9fe2a73e11bec90d81329b4bdf4186deae8c18",
+    "scripts/update.sh": "eb20faecb15a90a104443118f33fe2bbbfc8c92db6042eac60c153adaac8bedc",
+    "scripts/broker_control.py": "c593b36de9b726ee3d1b805729251809db7046a03510f017c181043784f1aa45"
+  },
+  "protected_broker_functions": [
+    "__init__",
+    "refresh_failed_lock",
+    "refresh_failed_locks",
+    "blocked"
+  ],
+  "package_sha256": "4badd341f2a9f0175894c6010a82efc7f5c346b9353d66a142edd89a51e6e40a",
+  "deployed": false,
+  "hardware_accessed": false,
+  "ribbon_ws_writes": false,
+  "automatic_scope": "new platform-authorized declared start operations only; no historical workspace scan",
+  "known_retained_boundaries": [
+    "existing control-lock and force-archive behaviors unchanged",
+    "real hardware/deployment verification not performed",
+    "HTML retains text preview/download"
+  ]
+}

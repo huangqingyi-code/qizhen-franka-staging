@@ -1,0 +1,11 @@
+test_actual_publication_drafts_validate_and_pin_new_skill (__main__.CandidateTests.test_actual_publication_drafts_validate_and_pin_new_skill) ... ok
+test_all_current_adapter_operations_are_discoverable_in_skill (__main__.CandidateTests.test_all_current_adapter_operations_are_discoverable_in_skill) ... ok
+test_concrete_call_examples_match_real_adapter_schema (__main__.CandidateTests.test_concrete_call_examples_match_real_adapter_schema) ... ok
+test_publication_instruction_guard_accepts_candidate_and_rejects_missing_rules (__main__.CandidateTests.test_publication_instruction_guard_accepts_candidate_and_rejects_missing_rules) ... ok
+test_real_managed_provider_loads_exact_packaged_skill (__main__.CandidateTests.test_real_managed_provider_loads_exact_packaged_skill) ... ok
+test_removed_instructions_and_unsupported_actions_do_not_survive (__main__.CandidateTests.test_removed_instructions_and_unsupported_actions_do_not_survive) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.004s
+
+OK

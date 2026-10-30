@@ -1,0 +1,6 @@
+test_real_yaml_import_preserves_comments_and_rejects_unsafe_tags (test_ribbon_upgrade.RibbonUpgradeTests.test_real_yaml_import_preserves_comments_and_rejects_unsafe_tags) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.152s
+
+OK

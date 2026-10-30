@@ -1,0 +1,1 @@
+{"ok": true, "real_connector_handler_broker": true, "hardware": "fixture_only", "prepare": "offline_checks_passed", "binary_sha256_verified": true, "private_binary_export_verified": true, "packaged_manual_verified": true, "adapter_failure_reported_as_failure": true, "only_terminal_response_high_impact": true, "native_delta_without_extra_input": true}

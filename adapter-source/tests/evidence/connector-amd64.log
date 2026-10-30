@@ -1,0 +1,11 @@
+test_adapter_manager_checks_ok_false_after_schema_validation (test_connector_upgrade.ConnectorUpgradeTests.test_adapter_manager_checks_ok_false_after_schema_validation) ... ok
+test_failure_envelope_is_delivered_failure_with_original_error (test_connector_upgrade.ConnectorUpgradeTests.test_failure_envelope_is_delivered_failure_with_original_error) ... ok
+test_manager_failure_exception_preserves_envelope (test_connector_upgrade.ConnectorUpgradeTests.test_manager_failure_exception_preserves_envelope) ... ok
+test_replayed_command_returns_receipt_without_reinvoke (test_connector_upgrade.ConnectorUpgradeTests.test_replayed_command_returns_receipt_without_reinvoke) ... ok
+test_running_session_is_call_receipt_not_experiment_completion (test_connector_upgrade.ConnectorUpgradeTests.test_running_session_is_call_receipt_not_experiment_completion) ... ok
+test_upgraded_franka_manifest_is_accepted_by_connector (test_connector_upgrade.ConnectorUpgradeTests.test_upgraded_franka_manifest_is_accepted_by_connector) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.152s
+
+OK

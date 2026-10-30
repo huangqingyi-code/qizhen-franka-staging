@@ -1,0 +1,4 @@
+Processing /work/linux-edge/qizhen_linux_edge-0.1.1-py3-none-any.whl
+Installing collected packages: qizhen-linux-edge
+Successfully installed qizhen-linux-edge-0.1.1
+{"ok": true, "real_connector_handler_broker": true, "hardware": "fixture_only", "prepare": "offline_checks_passed", "binary_sha256_verified": true, "adapter_failure_reported_as_failure": true}

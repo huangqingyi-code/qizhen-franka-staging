@@ -1,0 +1,1253 @@
+--- before/README.md
++++ after/README.md
+@@ -1,8 +1,23 @@
+-# Franka Ribbon Adapter 2.3.10
++# Franka Ribbon Adapter 2.3.11
+ 
+ 本目录为 AMD64 真实后端源码。操作及参数的唯一契约是 `adapter.json`。
+-本版依据 `docs/RIBBON.md` 的 2026-10-22 版本及其引用的 `docs/PIPELINE.md`。
++本版依据 `docs/RIBBON.md` 的 2026-10-23 版本及其引用的 `docs/PIPELINE.md`。
+ 新版源码和安装包不会自动替换已安装版本、启动 broker、调用设备或同步平台能力。
++
++## 2.3.11 安装几何、动捕资产与手册同步
++
++显式起点合同要求 `flange_58mm_v3`，宽面对齐保持法兰外 58 mm 的连接点。
++旧标定、旧 CSV/guard 必须重新调平/标定和规划，不能给旧起点补新标签；执行器当前只接受
++`FRANKA_RIBBON_GUARD_FLANGE_58MM_V3`。本次不改写共享起点、世界系标定或历史数据。
++
++Nokov monitor/record 选择 `ribbon_1021`；shape.extract 只取该带身资产的有效单帧点列，
++不混入旧 `ribbon` 或端板 `x0` / `x1`。手册记录带身 12 点，实际可见点数以本次回执为准。
++端点 `x1/Marker2`、`x0/Marker3`、28 mm 端板法向偏移由原生后处理默认值负责，
++Adapter 不把端板点当成带身点，不为历史数据自动补名或套用新几何。
++
++随包手册同步到 2026-10-23，保留 Adapter 的独立会话约定；manual.read 仍只读包内手册。
++现场 SSH 网关的 `approved` 放行与 extension 队列工具属于另一入口，本 Adapter 不新增远程
++approve 或检查点复用操作。源码和候选包不会自动安装、重启 broker 或同步平台能力。
+ 
+ ## 2.3.10 会话快照顶层白名单
+ 
+@@ -254,7 +269,7 @@
+ 测试不连接硬件、不运行真实 Connector 服务，不安装或升级已部署包。
+ 
+ 容器测试入口见 `tests/TESTING.md`，容器网络关闭，不挂载厂商工作区。
+-本版发布源为 adapter.json 的 2.3.8，旧版本的包保留且不能覆盖。
++本版发布源为 adapter.json 的 2.3.11，旧版本的包保留且不能覆盖。
+ 
+ ```bash
+ python3 scripts/build_adapter.py --architecture amd64 --output packages
+--- before/adapter.json
++++ after/adapter.json
+@@ -1,7 +1,7 @@
+ {
+   "schema_version": "1.0",
+   "adapter_revision_id": "adapter_franka_ribbon",
+-  "version": "2.3.10",
++  "version": "2.3.11",
+   "entrypoint": "handler.py",
+   "runtime_requirements": {
+     "operating_system": "linux",
+@@ -268,7 +268,7 @@
+     {
+       "operation_id": "franka.nokov.monitor",
+       "name": "Nokov 实时监测",
+-      "summary": "有限时长监测ribbon markerset，默认30秒、最多300秒；到时SIGINT正常收尾，可提前session.cancel。",
++      "summary": "有限时长监测ribbon_1021 markerset，默认30秒、最多300秒；到时SIGINT正常收尾，可提前session.cancel。",
+       "input_schema": {
+         "type": "object",
+         "properties": {
+@@ -289,7 +289,7 @@
+           "request_id"
+         ],
+         "additionalProperties": false,
+-        "description": "有限时长监测 ribbon markerset，不发送机器人运动。返回 session_id 后查询同一会话；到时发送 SIGINT 正常收尾，不能通过新 request_id 重复启动。"
++        "description": "有限时长监测 ribbon_1021 markerset，不发送机器人运动。返回 session_id 后查询同一会话；到时发送 SIGINT 正常收尾，不能通过新 request_id 重复启动。"
+       },
+       "output_schema": {
+         "type": "object",
+@@ -368,7 +368,7 @@
+     {
+       "operation_id": "franka.nokov.record",
+       "name": "Nokov 形状记录",
+-      "summary": "记录在线 ribbon markerset（当前实测10点），生成本次产物句柄；不运动。",
++      "summary": "记录在线 ribbon_1021 markerset（手册记录12点，实际可见点数以本次回执为准），生成本次产物句柄；不运动。",
+       "input_schema": {
+         "type": "object",
+         "properties": {
+@@ -388,7 +388,7 @@
+           "request_id"
+         ],
+         "additionalProperties": false,
+-        "description": "记录本次 ribbon 动捕点到会话目录，不发送机器人运动；坐标为 Nokov 世界系、单位 mm，不是机器人 base 坐标。返回 session_id 后查询并分页获取本次 CSV 句柄。"
++        "description": "记录本次 ribbon_1021 动捕点到会话目录，不发送机器人运动；坐标为 Nokov 世界系、单位 mm，不是机器人 base 坐标。返回 session_id 后查询并分页获取本次 CSV 句柄。"
+       },
+       "output_schema": {
+         "type": "object",
+@@ -466,22 +466,22 @@
+     },
+     {
+       "operation_id": "franka.shape.extract",
+-      "name": "提取单帧 ribbon+y 点列",
+-      "summary": "过滤 ribbon markerset，取最后至少两个有效点的单帧；动捕世界系 mm，不保证全程或全部点可见。",
++      "name": "提取单帧 ribbon_1021 点列",
++      "summary": "过滤 ribbon_1021 markerset，取最后至少两个有效点的单帧；动捕世界系 mm，不保证全程或全部点可见。",
+       "input_schema": {
+         "type": "object",
+         "properties": {
+           "artifact_id": {
+             "type": "string",
+             "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$",
+-            "description": "本次 Nokov 记录得到的 markers.csv 句柄；从中读取 ribbon markerset 的最后有效帧，不接受机器人状态或形状 JSON。"
++            "description": "本次 Nokov 记录得到的 markers.csv 句柄；从中读取 ribbon_1021 markerset 的最后有效帧，不接受机器人状态或形状 JSON。"
+           }
+         },
+         "required": [
+           "artifact_id"
+         ],
+         "additionalProperties": false,
+-        "description": "从已登记的 ribbon markers.csv 提取最后一个至少含两个有效可见点的帧，并生成形状 JSON。只处理保存数据；单帧点列不是完整带面、实时形状或扭转角。"
++        "description": "从已登记的 ribbon_1021 markers.csv 提取最后一个至少含两个有效可见点的帧，并生成形状 JSON。只处理保存数据；单帧点列不是完整带面、实时形状或扭转角。"
+       },
+       "output_schema": {
+         "type": "object",
+@@ -1175,7 +1175,7 @@
+           },
+           "align_ribbon_up": {
+             "type": "boolean",
+-            "description": "默认 false。true 时仅做宽面对齐，要求 translation_m=[0,0,0]、rotation_deg=0，显式时长 >=2 s；每步最多 2°、误差不得超过 20°，保持法兰外 8 mm 连接点，不是任意姿态控制。"
++            "description": "默认 false。true 时仅做宽面对齐，要求 translation_m=[0,0,0]、rotation_deg=0，显式时长 >=2 s；每步最多 2°、误差不得超过 20°，保持法兰外 58 mm 连接点，不是任意姿态控制。"
+           }
+         },
+         "required": [
+@@ -1308,7 +1308,7 @@
+           },
+           "align_ribbon_up": {
+             "type": "boolean",
+-            "description": "默认 false。true 时仅做宽面对齐，要求 translation_m=[0,0,0]、rotation_deg=0，显式时长 >=2 s；每步最多 2°、误差不得超过 20°，保持法兰外 8 mm 连接点，不是任意姿态控制。"
++            "description": "默认 false。true 时仅做宽面对齐，要求 translation_m=[0,0,0]、rotation_deg=0，显式时长 >=2 s；每步最多 2°、误差不得超过 20°，保持法兰外 58 mm 连接点，不是任意姿态控制。"
+           }
+         },
+         "required": [
+@@ -1395,7 +1395,7 @@
+     {
+       "operation_id": "franka.task.create",
+       "name": "创建实验任务",
+-      "summary": "生成base/fer_ribbon_tcp任务和冻结X下界，dx>=0；显式起点须带flange_8mm_v2真实标定标识，不为旧起点补标识。",
++      "summary": "生成base/fer_ribbon_tcp任务和冻结X下界，dx>=0；显式起点须带flange_58mm_v3真实标定标识，不为旧起点补标识。",
+       "input_schema": {
+         "type": "object",
+         "properties": {
+@@ -1583,8 +1583,8 @@
+                     "description": "七个关节的绝对角度，按机器人关节顺序，单位 rad；不是 deg、TCP 坐标或目标增量，不编造数值绕过缺失起点。"
+                   },
+                   "ribbon_mount": {
+-                    "const": "flange_8mm_v2",
+-                    "description": "当前法兰直连标定标识固定为 flange_8mm_v2；必须来自真实对应装夹起点，不能给旧起点补标签冒充重新标定。"
++                    "const": "flange_58mm_v3",
++                    "description": "当前法兰直连标定标识固定为 flange_58mm_v3；必须来自真实对应装夹起点，不能给旧起点补标签冒充重新标定。"
+                   }
+                 },
+                 "required": [
+@@ -1758,7 +1758,7 @@
+     {
+       "operation_id": "franka.task.validate",
+       "name": "静态校验任务",
+-      "summary": "调用load_task静态校验，起点须带ribbon_mount=flange_8mm_v2；不运动，不等于可达或可执行。 静态通过不能替代prepare完整规划、仿真和预检。",
++      "summary": "调用load_task静态校验；当前规划起点须来自flange_58mm_v3标定，静态语法通过不代表旧快照可复用；不运动，不等于可达或可执行。 静态通过不能替代prepare完整规划、仿真和预检。",
+       "input_schema": {
+         "type": "object",
+         "properties": {
+@@ -2041,7 +2041,7 @@
+           "trajectory_artifact_id": {
+             "type": "string",
+             "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$",
+-            "description": "本任务实际选定的 trajectory.csv 产物句柄，不是 .csv.yaml；须保留同名 .ribbon_guard 且两者均已登记、哈希未变；真实后端拒绝模拟轨迹。CSV 是时间和七关节绝对 rad 值，不是 Cartesian 航点。"
++            "description": "本任务实际选定的 trajectory.csv 产物句柄，不是 .csv.yaml；须保留同名 .ribbon_guard 且两者均已登记、哈希未变；当前执行器只接受 FRANKA_RIBBON_GUARD_FLANGE_58MM_V3，旧安装轨迹需重新标定规划；真实后端拒绝模拟轨迹。CSV 是时间和七关节绝对 rad 值，不是 Cartesian 航点。"
+           },
+           "time_scale": {
+             "type": "number",
+@@ -2145,7 +2145,7 @@
+           "trajectory_artifact_id": {
+             "type": "string",
+             "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$",
+-            "description": "本任务实际选定的 trajectory.csv 产物句柄，不是 .csv.yaml；须保留同名 .ribbon_guard 且两者均已登记、哈希未变；真实后端拒绝模拟轨迹。CSV 是时间和七关节绝对 rad 值，不是 Cartesian 航点。"
++            "description": "本任务实际选定的 trajectory.csv 产物句柄，不是 .csv.yaml；须保留同名 .ribbon_guard 且两者均已登记、哈希未变；当前执行器只接受 FRANKA_RIBBON_GUARD_FLANGE_58MM_V3，旧安装轨迹需重新标定规划；真实后端拒绝模拟轨迹。CSV 是时间和七关节绝对 rad 值，不是 Cartesian 航点。"
+           },
+           "time_scale": {
+             "type": "number",
+--- before/docs/RIBBON.md
++++ after/docs/RIBBON.md
+@@ -1,13 +1,14 @@
+ # Franka Ribbon 实验手册（实验上下文 + API 操作）
+ 
+-版本：2026-10-22（在 2026-10-20 版基础上增补任务根迁出 `pipeline/`、`tasks_root` 网关配置、运行根目录 `motion_summary.txt` 走法摘要与失败运行归档；此前版本已含检查点复用、起点校验与 `return_to_start_joints` 回程关节自运动；ribbon 后处理默认只生成交互 HTML、两个 MP4 需 --ribbon-videos，按当前实现对齐），适用于本机 `/home/zhaoyunzyq/ribbon_ws/pipeline` 当前实现。
++版本：2026-10-23（在 2026-10-22 版基础上增补网关操作者放行 `approved`、pro6000 adapter 2.3.10 会话快照顶层白名单、动捕资产改名 `ribbon_1021` / `x0` / `x1` 与端板法向偏移、ribbon 安装端 58 mm；此前版本已含任务根迁出 `pipeline/`、`tasks_root` 网关配置、运行根目录 `motion_summary.txt` 走法摘要与失败运行归档、检查点复用、起点校验、`return_to_start_joints`、SSH 网关队列与 prepare/execute 复用、ribbon 后处理默认只生成交互 HTML（两个 MP4 需 --ribbon-videos）），适用于本机 `/home/zhaoyunzyq/ribbon_ws/pipeline` 当前实现。
+ 工作区布局（2026-10-22）：任务 YAML 与导出 CSV 的根目录是 `ribbon_ws/trajectories/`（2026-10-22 从 `ribbon_ws/pipeline/trajectories` 整体迁出，旧路径不再存在）；本目录属于 `ribbon_ws/pipeline/`；ROS 在 `ribbon_ws/ros/`，libfranka 在 `ribbon_ws/libfranka/`；动捕在 `ribbon_ws/Nokov/`（采集器
+-`~/ribbon_ws/Nokov/recorder/build/nokov_recorder`，数据 `~/ribbon_ws/Nokov/data/`），测力计在 `ribbon_ws/ati/`。总览见 `ribbon_ws/README.md`。
++`~/ribbon_ws/Nokov/recorder/build/nokov_recorder`，数据 `~/ribbon_ws/Nokov/data/`），测力计在 `ribbon_ws/ati/`，USB 摄像头在
++`ribbon_ws/camera/`。总览见 `ribbon_ws/README.md`。
+ 本文由原 `FRANKA_RIBBON_CONTEXT.md` 与 `FRANKA_RIBBON_LLM_API.md` 合并而成；`RIBBON_FLANGE_MOUNT.md`（并入 3.1）
+ 与 `RIBBON_WORKSPACE_CONVERSATION_SUMMARY_20260922.md`（并入第 3 章）随后也已并入并删除。**本文件是唯一手册**，
+ 远程 `read_franka_manual` 读取的也是本文件（见 18.2）。
+ 
+-**启真平台 Adapter 2.3.10 会话约定：** `franka.manual.read` 固定读取当前 Adapter
++**启真平台 Adapter 2.3.11 会话约定：** `franka.manual.read` 固定读取当前 Adapter
+ 安装包内的本手册，按版本发布并返回 SHA-256，不读取 `ribbon_ws` 中的手册副本。
+ 原生 extension 的 `read_franka_manual` 仍属于下文的原生工具参考。
+ 本版 snapshot 的顶层字段由 adapter.json 的会话状态输出白名单固定；嵌套结果、确认和停稳证据、产物分页及控制锁行为保持原样。
+@@ -28,13 +29,68 @@
+ 两次采样的位置范围仍须 <=0.0001 rad；采样间隔 0.25 s、允许模式和无效数据拒绝规则不变。
+ 这是 Adapter 的停稳判据调整，不清除原生调平的 run_pause，也不自动重试运动。
+ 
++**Adapter 2.3.11 安装与动捕：** 当前安装端为法兰 +Z 58 mm，显式起点要求真实
++`flange_58mm_v3` 标定；旧起点不可补标签冒充新标定。动捕监测、记录及单帧提取选择
++`ribbon_1021`；带身 12 点是手册记录，实际可见点数以本次回执为准，不能要求每帧全点可见。
++现场网关的 `approved` 由操作者通过本机入口放行，不能通过 Adapter 代填。
++
+ 怎么读：
+ 
+ - **第一部分（第 1–6 章）**：接手实验前必须建立的背景——AI 角色与权限、任务目标、硬件装夹与试样、坐标与位姿约定、操作边界。
+ - **第二部分（第 7–17 章）**：按接口查阅的 API 手册——调用命令、参数、交互、回执、失败处置与任务 YAML 格式。
+-- **第三部分（第 18 章）**：远程托管工具（extension）与视频说明。
++- **第三部分（第 18 章）**：远程托管工具（extension）、任务队列与视频说明。
+ 
+ ## 更新记录
++
++- **2026-10-23 启真平台 Adapter 2.3.11 源码同步**：同步 `flange_58mm_v3` 起点合同、58 mm
++  宽面对齐说明和 `ribbon_1021` 动捕命令/单帧提取，更新随包手册与无硬件回归；保留旧版本包，
++  不修改旧标定/实验数据，不安装或切换服务。修正第 10 章遗漏的旧资产名示例。见 18.2。
++
++- **2026-10-23 动捕资产改名 `ribbon_1021` / `x0` / `x1` + 端板法向偏移**：Nokov 工程里的资产 2026-10-21 深夜
++  改名（`ribbon` → `ribbon_1021`，12 点），2026-10-22 20:48 又把两块端板定名 `x1`（4 点刚体）/ `x0`（3 点刚体）；
++  端点口径随之更正为**机械臂端 = `x1/Marker2`、固定端 = `x0/Marker3`**（与 2026-10-16 记录的
++  `ribbon_x1/Marker1` / `ribbon_x0/Marker3` 不是同一套命名，旧记录只在旧资产下成立）。
++  pipeline 于 2026-10-23 00:19 同步：`tools/ribbon_params.yaml` 与 `tools/ribbon_level.py` 的 `marker_sets`
++  改为 `ribbon_1021`；`tools/franka_api.py` 的 `--plane` 与 `capture.marker_set` 回执字段同步改名；
++  `tools/pipeline_videos.py` 的带身兜底 markerset 改为 `ribbon_1021`，近/远端点默认改为 `x1/Marker2`、
++  `x0/Marker3`，`--end-z-offset-m` 0.025 → **0.028**（实测球心高于带子中心线 27.2 / 29.3 mm），并新增
++  `--end-offset-mode {world_z,plate_normal}`（默认 `plate_normal`）：把该资产全部 marker 当刚体做 Kabsch，
++  偏移方向随端板一起转，缺板点或残差 >5 mm 时逐帧退回 `world_z` 并计数；
++  `tools/world_base_calibrate.py` 的默认资产/点名同步为近端 `x1/Marker2`、远端 `x0/Marker3`。
++  自检（2026-10-23 00:04 静态抓取，181 帧，不动机器人）：`end_constraints.enabled=true`，
++  `plate_normal` 用满 181/181 帧、0 次回落；端板水平时两种模式端点差 0.00 mm；拟合带长 1.000 m、
++  宽度 RMS 0.64 mm、实测段 0.804 m（80%）、`end_gap` 90 mm。
++  **历史数据不随之改名**：旧 run 的 CSV 仍写 `ribbon` / `ribbon_x0` / `ribbon_x1`，渲染旧数据要显式
++  `--near-end-set ribbon_x0 --near-end-marker Marker3 --far-end-set ribbon_x1 --far-end-marker Marker1
++  --end-z-offset-m 0.025 --end-offset-mode world_z`，否则端点读不到、`end_constraints.enabled=false`
++  （只重建观测段，不报错）；网关 `render_videos` 补录旧任务时就是这种情况。
++  单元测试尚未跟上：`pipeline/tools/tests` 当前 193 通过 / 12 失败，其中 5 项（`test_ribbon_geometry` 1 项、
++  `test_world_base_calibrate` 4 项）是按旧资产名断言，其余 7 项是 2026-10-20 起既有的 ribbon 会话/快照用例。
++  未做：端点扭转插值（把外推段 director 从未实测段单调过渡到端板滚转），需要一次带完整 180° 扭转的
++  完整采集才能验证。见 3、10、15.6、18.1、18.2。
++
++- **2026-10-22 安装端改 58 mm**：`fer_link8 → fer_ribbon_tcp` 由 `[0,0,0.008]` 改为 `[0,0,0.058]`
++  （横向仍为零）；新标识 `flange_58mm_v3` / `FRANKA_RIBBON_GUARD_FLANGE_58MM_V3`。
++  旧 8 mm 起点快照、旧 CSV/guard 不可复用；执行器只接受 v3，必须重新调平/标定后再规划。
++  `pipeline_videos` 仍可读 v2 guard 做历史录像/世界系重建（几何取自链本身）。见 3.1、4.5、15.4。
++
++- **2026-10-22 网关操作者放行（`approved`）**：新任务一律以 `approved = 0` 落库，调度器永远跳过；
++  只有现场操作者在本机看板 <http://127.0.0.1:8770/> 点「确认执行」，或执行
++  `robot_job approve --id <id>`（SSH JSON `approve`），任务才进入可自动派发状态。`approve` 只接受
++  `queued`，并同时写 `acknowledged = 1`；提交参数无法预置放行，单独 `acknowledge` 不再足以启动。
++  新增配置 `require_operator_approval`（默认 `true`，设 `false` 是显式回滚）；`jobs` 表新增 `approved` 列
++  （旧库自动 `ALTER TABLE`），`queue_status` 每项新增 `approved`，`eligible` 改为按全部闸门计算，
++  `health` 返回 `require_operator_approval`。`robot_job start` 仍是显式手动启动、不需要放行。
++  pro6000 侧**没有对应工具**：放行必须由人在本机完成（见 18.2）。本次只改网关代码、看板与文档，
++  没有登记或启动任何任务。
++
++- **2026-10-22 pro6000 adapter 2.3.10**：`adapter_franka_ribbon` 由 2.3.9 升到 **2.3.10**：
++  `franka.session.status`（`Broker.snapshot()`）改为按 `adapter.json` 的
++  `franka.session.status.output_schema` **白名单**输出顶层字段，不再"复制内部会话再排除少数"，
++  新增内部字段默认不进回执；result / confirmation / stop_verification 与产物条目的嵌套内容不变，
++  产物分页、128 KiB 大结果处理、状态核验与控制锁规则保持原样。2.3.9 的任务根迁移、2.3.8 的
++  `--force-stop` 清锁入口继续保留。这是输出边界收紧，不是新功能；安装包为
++  `packages/franka-ribbon-2.3.10-amd64.tar.gz`，版本以 `adapter.json` 为准。见 18.2。
+ 
+ - **2026-10-22 任务根迁出 pipeline + 运行摘要 + 失败归档**：任务 YAML / 导出 CSV 的根目录从
+   `~/ribbon_ws/pipeline/trajectories` 整体移到 `~/ribbon_ws/trajectories`（同盘移动，内容与哈希不变）。
+@@ -47,8 +103,8 @@
+   历史运行已回填 201 个文件，只新增文件、不改 `result.json`。
+   `pipeline_runs` 中 65 个失败运行移入 `pipeline/archive/failed_runs_20261022/`（保留相对路径与
+   `motion_summary.txt`，附 README 与 index.tsv）；`Output/jobs` 的失败任务按数据库保留，未移动。
+-  Adapter 2.3.9：`Workspace.tasks` 改为 `<workspace>/trajectories`（旧位置仅在过渡期回退），
+-  手册与 README 同步；部署仍走包安装流程。本次修改不启动设备、不运动、不连接机器人。
++  pro6000 adapter 源码同步：`Workspace.tasks` 改为 `<workspace>/../trajectories`，手册与 README 更新，
++  版本升到 2.3.9；部署仍走包安装流程。本次修改不启动设备、不运动、不连接机器人。
+ 
+ - **2026-10-20 后处理默认只出 HTML**：`run_pipeline.py --mode execute` 运动结束后默认只生成
+   `videos/ribbon_viewer.html`（以及 `ribbon.json`、`ribbon_fit_diagnostics.json`）；两个 MP4
+@@ -56,6 +112,30 @@
+   `pipeline_videos.py --ribbon-videos` / 网关 `render_videos` 补录。逐帧拟合仍保留用于质量指标，
+   省掉的是 matplotlib 3D 逐帧光栅化和 MP4 编码；实测 85 s 运动的后处理从约 191 s 降到约 15–20 s。
+   见 15.5、15.6、18.1。
++- **2026-10-19 网关 prepare/execute 复用与远程确认**：SSH 任务网关新增 `list_runs` /
++  `read_run` / `submit_resume` / `send_input`，pro6000 新增 `robot_pipeline_list_runs`、
++  `prepare_robot_pipeline_from_run` 与 `robot_pipeline_confirm`。复用接受已有 `plan`/`prepare`
++  运行，可生成不可变 prepare 或 execute 规格，源运行不动；execute 复用进入普通队列。
++  运行中的 MOVE/HOME/RELEVEL/QUIT 提示可用 `robot_pipeline_confirm` 远程发送当前
++  `pending_confirmation.choices` 中的精确答案，也可继续 attach；不再要求现场终端。
++  见 15.9、18.2、18.3。
++- **2026-10-19 pro6000 队列工具**：pro6000 的 ribbon-research hardware extension 已封装
++  网关队列：`robot_pipeline_queue_status`（只读）、`robot_pipeline_queue_pause` /
++  `robot_pipeline_queue_resume`（只阻止新启动）、`robot_pipeline_acknowledge`（仅手动
++  tool-chat/tool-agent 上下文、仅 Experimentalist 后端角色）、`robot_pipeline_reorder`；
++  `robot_pipeline_submit` 新增可选 `priority`。默认仍不代认、不代答、不重试；
++  `acknowledged` 需单独动作；pipeline 的 MOVE 提示由用户明确选择后远程发送，
++  不自动确认。已重启交互窗口才加载新工具；
++  本次只改代码与文档，未登记或启动任何任务。见 18.2、18.3。
++- **2026-10-19 任务队列与自动调度**：SSH 任务网关新增单实例 `worker` 调度器，
++  远端可任意时间提交任意多个任务，按 `priority` 高者先、同优先级先提交先执行，
++  逐个启动、一次一个。自动启动需同时满足 `auto_start=true`、未暂停、无活动或
++  `needs_review` 任务、该任务已显式 `acknowledge`；启动前仍复核输入与配置哈希。
++  `needs_review` 继续阻塞队列；`confirmation_timeout_seconds` 默认 0（不超时、不代答）。
++  新增 `queue`/`acknowledge`/`reorder` 命令与同名 SSH JSON 操作，`submit`/`submit_api`
++  支持 `priority` 与 `acknowledge_calibration_motion`。生产服务
++  `zd-robot-gateway-queue.service` 已启用，但没有启动任何任务；两条旧 `queued`
++  任务未确认，保持不动。见 18.3。
+ - **2026-10-19 回程关节自运动（`return_to_start_joints`）**：任务 YAML 新增顶层布尔
+   `return_to_start_joints: true`。规划器在最后一段之后追加一段**保持 TCP 位姿的零空间自运动**，
+   把七个关节送回 `start_state.joint_positions`；修正段逐点检查关节限位、冻结 X 下界与
+@@ -94,7 +174,7 @@
+ - **2026-10-13 交互与采集**：调平动作自动逐条执行（不再逐次 `MOVE`，可 `RESUME`/`SKIP`/`QUIT`）、
+   `home_pose` 不等待 Enter、`cartesian_delta_move` 无确认闸门、真机轨迹期间默认采集 Nokov、远程工具封装。
+   见 5.1、12、13、15.0、18。
+-- **2026-10-12 直连安装**：默认无抓手，控制点为 `fer_ribbon_tcp`（`fer_link8` + 局部 Z 8 mm），
++- **2026-10-12 直连安装**：默认无抓手，控制点为 `fer_ribbon_tcp`（`fer_link8` + 局部 Z 8 mm，2026-10-22 改为 58 mm），
+   旧标定、旧 CSV/guard 不可复用；先重新调平标定再规划。见 3.1、4.5。
+ 
+ ---
+@@ -154,7 +234,7 @@
+ |---|---|
+ | 机械臂 | Franka Emika Research（FER），七个机械臂关节；本机 ROS 2 Humble、libfranka 0.8.0 |
+ | 真机连接 | FCI，机器人 IP `172.16.0.3`；现有主机配置使用 `eno1`、`172.16.0.1/24` |
+-| 规划控制点 | `fer_ribbon_tcp`；法兰 +Z 8 mm 的 ribbon 端点（见 4.5） |
++| 规划控制点 | `fer_ribbon_tcp`；法兰 +Z 58 mm 的 ribbon 端点（见 4.5） |
+ | 固定端 | ribbon 一端由夹具固定在实验环境中；不会随机械臂运动 |
+ | 可动端 | ribbon 另一端由机械臂末端夹持，机械臂通过端部位置和朝向施加边界条件 |
+ | 有效长度 L | **1 m**（用于描述有效 ribbon 长度，不是当前弯曲状态下的两端直线距离） |
+@@ -165,42 +245,47 @@
+ | 材料名称 | 尚未记录，不依据弹性模量猜测材料 |
+ | 动捕 | Nokov / XINGYING；当前 server 参数为广播网卡地址 `10.1.1.198`，本机使用 Z-up |
+ | 六维力 | ATI Mini45（Net F/T 接口盒），设备 `172.16.0.5`、UDP 49152、约 50 Hz；只有 `execute` 真机轨迹期间默认记录，标定不可用时只有原始 counts（见 15.8） |
+-| 当前观察侧 | Markerset 名 **`ribbon`**（即 `tools/ribbon_params.yaml` 的 `marker_sets`），必须原样匹配；它是资产名称，不能据此推断为机器人 base +Y |
++| 当前观察侧 | Markerset 名 **`ribbon_1021`**（即 `tools/ribbon_params.yaml` 的 `marker_sets`；2026-10-22 前叫 `ribbon`），必须原样匹配；它是资产名称，不能据此推断为机器人 base +Y |
+ | 端点识别 | 当前 `gripper_end: max_x`：动捕可见点中 X 最大端为夹爪端，X 最小端为固定端 |
+-| marker 资产 | 在线实际 markerset 为 `ribbon`，2026-10-12 实测 10 点（`+y01`–`+y05`、`-y01`–`-y05`）；仓库里的 `~/ribbon_ws/Nokov/recorder/assets/ribbon+y.mars`（6 点 Marker1–Marker6）只是尚未启用的模板。这是文档记录，不能直接读取 docs 外的资产文件；在线实际资产及可见数量用 list/本次记录核对 |
++| marker 资产 | 在线资产：带身 **`ribbon_1021`（12 点）**、机械臂夹持端 **`x1`（4 点 Marker1–4，刚体）**、固定端 **`x0`（3 点 Marker1–3，刚体）**；两块端板用于端点锚定与滚转解算（当前默认端点 `x1/Marker2`、`x0/Marker3`，见 15.6 之后的 2026-10-23 段）。2026-10-12 记录的旧 `ribbon`（10 点 `+y01`–`+y05`/`-y01`–`-y05`）与旧 `ribbon_x0`/`ribbon_x1` 已在资产里改名，历史 run 的 CSV 仍写旧名。仓库里的 `~/ribbon_ws/Nokov/recorder/assets/ribbon+y.mars`（6 点 Marker1–6）仍只是未启用模板。这是文档记录，不能直接读取 docs 外的资产文件；在线实际资产及可见数量用 list/本次记录核对 |
+ 
+ 装夹示意：`环境固定夹具 ── ribbon（可弯曲/扭转）── 机械臂末端夹持点`。操作模型按端部夹持理解；“固定”不代表程序已测得夹具转动刚度、夹持滑移或六自由度理想固支。用户已确认参考装夹中长轴从机械臂夹持端指向固定端为 base +X，宽度沿 Y、厚度沿 Z；正方向与 tool 对应见第 4 章。实际夹持偏移、固定端绝对位置、装夹允许载荷、允许应变和最小弯曲半径尚无实测确定值。
+ 
+-#### 3.1 法兰直连安装与夹持方式（2026-10-12）
+-
+-用户给定：抓手已拆除，黑色夹块上下夹持 ribbon，末端齐平；灰色连接件厚 8 mm，ribbon 端点中心对齐法兰中心。
++#### 3.1 法兰直连安装与夹持方式（2026-10-12；2026-10-22 改 58 mm）
++
++用户给定（2026-10-12）：抓手已拆除，黑色夹块上下夹持 ribbon，末端齐平；当时灰色连接件厚 8 mm，ribbon 端点中心对齐法兰中心。
++**2026-10-22 用户把安装端中心改为沿法兰 +Z 58 mm、横向偏移 0**；连接件/夹块的实际外形仍未测量。
+ 坐标链为 `base → … → fer_link7 → fer_link8 → fer_ribbon_tcp`：`fer_link8 → fer_ribbon_tcp` 的平移为
+-`[0, 0, 0.008] m`、旋转为单位阵；link7→link8 的 107 mm 是机器人本体结构，保留；旧 hand TCP 的 103.4 mm
++`[0, 0, 0.058] m`、旋转为单位阵；link7→link8 的 107 mm 是机器人本体结构，保留；旧 hand TCP 的 103.4 mm
+ 和 hand 的 −45° 偏转已移除。TCP 原点位于 ribbon 安装端，**不是**黑色夹块外沿的自由段起点；可选球形工作空间
+ 的长度、固定端 anchor 与 margin 也必须按同一端点定义测量（见 4.6）。
+ 
+ - **链路**：FER URDF/SRDF、MoveIt 和 Gazebo 默认无抓手，规划组末端为 `fer_ribbon_tcp`；`hand:=true`
+   只用于显式生成旧抓手描述，旧抓取 MTC 示例不适用于当前硬件；驱动与只读发布默认 `finger_state_source=omit`。
+ - **一致性**：YAML 默认末端、ribbon profile、X 下界、导出的 FK 链、离线执行 guard、预检和离线 FK 工具
+-  统一使用新点；标定保存 `start_state.ribbon_mount: flange_8mm_v2`，ribbon 规划拒绝旧快照（pipeline 前置
++  统一使用新点；标定保存 `start_state.ribbon_mount: flange_58mm_v3`，ribbon 规划拒绝旧快照（pipeline 前置
+   语法检查允许读旧起点，但真正规划必须在重新标定之后）。
+-- **guard**：内容版本为 `FRANKA_RIBBON_GUARD_FLANGE_8MM_V2`，拒绝旧抓手保护文件；CSV 中 `ribbon_guard_v1`
++  现有 `config/franka_start_pose.yaml` 仍是 2026-10-21 的 8 mm 时代快照（保留 `flange_8mm_v2`），
++  下次调平成功后由 `ribbon_level` 改写为 `flange_58mm_v3`；不要手工改 tag。
++  同理 `tools/state/world_base.yaml` 的 `connector_m` 仍是 0.008，下一次 `world_base_calibrate` 会重写；
++  标定失败沿用旧值时，世界系/视频重建会偏约 50 mm，必须在 result 里确认已重新标定。
++- **guard**：内容版本为 `FRANKA_RIBBON_GUARD_FLANGE_58MM_V3`，执行侧拒绝旧抓手与旧 8 mm 安装的保护文件（`pipeline_videos` 可读 v2 做历史重建）；CSV 中 `ribbon_guard_v1`
+   列仍作为「必须携带保护文件」的兼容标记，几何版本由 sidecar 控制。
+ - **重新使用的前提**：更换抓手/安装或旧快照失效后，必须重新运行 ribbon 调平/标定，再重新规划及预检；
+   不要给旧快照手工补新标识，不要复用旧 CSV。这里的“旧 CSV”指旧安装/旧标定快照；同一
+-  `flange_8mm_v2` 安装、同一起点下的 plan/prepare 检查点复用见 15.9，两者不是一回事。
++  `flange_58mm_v3` 安装、同一起点下的 plan/prepare 检查点复用见 15.9，两者不是一回事。
+   启动新环境前关闭旧 MoveIt / `robot_state_publisher` 进程并重新 source `~/ribbon_ws/ros/install/setup.bash`。
+   默认 `home_pose` 读取实测关节起点，也应先重新标定再使用其默认目标。
+ - **边界与缺失项**：软件 TCP 轴平行法兰，这是坐标定义，不是材料宽度/厚度轴的测量结论；旧 tool X/Y 对应
+   关系失效，tool Z 与法兰 Z 同向；基于 base 轴的任务维持原轴定义。连接件直径、夹块长宽厚、质量/质心/惯量
+-  尚缺，未虚构碰撞外形或负载——当前碰撞模型覆盖机械臂，**不覆盖新夹具和可变形 ribbon**；8 mm 是几何端点
+-  偏移，不表示夹具整体长度只有 8 mm。FCI 的 `O_T_EE` / `F_T_EE` 仍是控制器报告的工具变换，未冒充新 TCP，
++  尚缺，未虚构碰撞外形或负载——当前碰撞模型覆盖机械臂，**不覆盖新夹具和可变形 ribbon**；58 mm 是几何端点
++  偏移，不表示夹具整体长度只有 58 mm。FCI 的 `O_T_EE` / `F_T_EE` 仍是控制器报告的工具变换，未冒充新 TCP，
+   也未自动写入控制器负载；规划与 guard 由关节角和模型算 ribbon 端点。调平用的 `cartesian_delta_move` 是
+   base 纯平移、姿态不变，各刚性连接点平移量相同，不需要补旋转杠杆臂。
+ 
+ **宽面法向约定（2026-10-12 晚补充）**：用户确认宽面法向与标准抓手安装后的两指连线同向，方向上对应法兰
+ 坐标 `[1/√2, 1/√2, 0]`（标准 hand 的 +Y），**不等于法兰 +Y**。调零 ORIENT 步骤用该方向对齐 base +Z，
+-并固定法兰外 8 mm 的连接点旋转。此前「材料宽厚方向尚待确认」「调平只做纯平移」描述的是增加 ORIENT 之前
++并固定法兰外 58 mm 的连接点旋转。此前「材料宽厚方向尚待确认」「调平只做纯平移」描述的是增加 ORIENT 之前
+ 的状态；后续 LEVEL/TENSION 仍是原有纯平移。软件 TCP 坐标仍平行法兰，无需恢复抓手几何。
+ 该次变更本身只做了离线构建、模型/配置回归与无硬件规划执行验证，未操作真机。
+ 
+@@ -297,11 +382,11 @@
+ 
+ #### 4.5 法兰直连的 ribbon 端点
+ 
+-取消抓手；ribbon 端点中心相对法兰外侧沿 +Z 为 8 mm，横向偏移为零。
++取消抓手；ribbon 端点中心相对法兰外侧沿 +Z 为 58 mm，横向偏移为零。
+ 新 `fer_ribbon_tcp` 的原点就是该端点，坐标轴平行法兰。
+-`ribbon_workspace.grip_offset` 若用于此端点应为 `[0,0,0]`，不可再添加 8 mm。
++`ribbon_workspace.grip_offset` 若用于此端点应为 `[0,0,0]`，不可再添加 58 mm。
+ 上节保存姿态、tool X/Y 对应关系和数值矩阵来自旧抓手，只保留作历史记录；新安装的数值必须重新计算。
+-当前调平默认启用宽面朝上对齐（`tools/ribbon_params.yaml` 的 `align_ribbon_up: true`）：按现行约定，宽面法向对应法兰方向 `Rz(−45°)·[0,1,0]`，程序以 `cartesian_delta_move --align-ribbon-up` 只做旋转、每步最多 2°、误差超过 20° 暂停，连接点保持法兰外 8 mm。该约定由维护者按现场安装标定；安装角度改变时先请维护者确认，不能在任务里自行套用别的 tool 轴对应关系。
++当前调平默认启用宽面朝上对齐（`tools/ribbon_params.yaml` 的 `align_ribbon_up: true`）：按现行约定，宽面法向对应法兰方向 `Rz(−45°)·[0,1,0]`，程序以 `cartesian_delta_move --align-ribbon-up` 只做旋转、每步最多 2°、误差超过 20° 暂停，连接点保持法兰外 58 mm。该约定由维护者按现场安装标定；安装角度改变时先请维护者确认，不能在任务里自行套用别的 tool 轴对应关系。
+ 
+ #### 4.6 固定端 base 坐标与 margin：当前不启用可选球形检查
+ 
+@@ -321,6 +406,9 @@
+   缺录像或录像失败只写告警（`result.json` 的 `simulation_video_warning`），也不代表真机表现。
+ - 力采集（`ati_capture` → ATI Mini45，见第 15.8 节）与录像一样只是记录：它挡住的是“缺数据仍继续上机”，
+   不改变任何通过判据；标定不可用时只有原始 counts（`calibrated=false`），不得当力值或力学结论报告。
++- USB 摄像头录像（`usb_capture` → `camera/usb_capture_adapter.py`，见第 15.10 节）与动捕/力采集
++  同等严格：它挡住的是“缺视频仍继续上机”，同样不改变任何通过判据；默认 1920x1080@30，
++  没有视频时不能把“程序退出 0”当作已录到画面。
+ - 仿真默认无界面不等于“仿真降级”：跟踪误差、记录覆盖、预检判据与开界面时同源。
+ - 失败可能发生于部分运动之后；先查当前状态和日志，不自动重发、归位或重放旧 CSV。`--from-run` 执行前的
+   起点校验是另一条路径（15.9），不是失败后的自动补救；归位仍需操作员 `HOME` 确认。
+@@ -332,7 +420,7 @@
+ > **2026-10-13 更新——下列三项取代本节 2026-09-27 记录的对应条目，其余条目（授权上限 execute、调平交互、最终 MOVE、保护与边界检查）一律不变：**
+ > · **运动期间采集：已启用。** `tools/pipeline_adapters.yaml` 的 `nokov_capture` 指向 `~/ribbon_ws/Nokov/nokov_capture_adapter.py`；`run_pipeline.py --mode execute` 在整段真机轨迹期间持续记录 ribbon markerset，成功结果为 `executed_and_captured`。置回 `null` 即恢复不采集（`executed_without_capture`）。
+ > · **采集适配器：已接入**，与调平阶段共用同一个 `nokov_recorder`（XINGYING C++ SDK），不是另写一套 SDK 调用。
+-> · **名义夹持点：`fer_ribbon_tcp`**（`fer_link8` + 局部 Z 0.008 m），不再是 `fer_hand_tcp`；后者只在 xacro `hand:=true` 生成带手模型时存在。
++> · **名义夹持点：`fer_ribbon_tcp`**（`fer_link8` + 局部 Z 0.058 m），不再是 `fer_hand_tcp`；后者只在 xacro `hand:=true` 生成带手模型时存在。
+ > 依据：2026-10-12 直连安装变更，以及用户 2026-10-13 明确要求记录运动过程中的 ribbon 点。
+ 
+ > **2026-10-14 当前仿真与录像（不改授权）：** `run_pipeline.py` 的 `simulate`
+@@ -352,16 +440,24 @@
+ > WARN，不影响任何判据）。授权上限、MOVE 确认、X guard 与预检阈值一律不变；
+ > 调平阶段不使用力传感器。
+ 
++> **2026-10-18 USB 摄像头录像已接入（不改授权）：** 按用户要求，`run_pipeline.py --mode execute`
++> 在 Nokov 动捕和 ATI 力采集开始工作、机械臂开始执行轨迹的同一时刻，调用
++> `camera/usb_capture_adapter.py` 开始录像；运动停止时摄像头一起停止。默认 **1920x1080 @ 30 fps**、
++> 输入 MJPEG、输出 H.264 mp4，并落盘逐帧 `wall_unix_ns` 时间戳 CSV（与 Nokov/ATI 同源可对齐）。
++> 默认开启且与动捕/力采集同等严格：摄像头打不开、中途断流或未覆盖运动时段都会以 `CAMERA_*`
++> 中止，不会在缺视频时继续真机运动；`usb_capture: null` 即关闭。授权上限、MOVE 确认、
++> X guard 与预检阈值一律不变；调平阶段不使用摄像头。
++
+ **用户已明确：运动期间采集已启用，授权到 execute。** 在本实验任务范围内，后续目标模型可运行完整 pipeline，不再重复询问是否允许到 execute；调平动作由程序自动逐条执行（不再逐次输入 MOVE），最终任务轨迹仍保留 MOVE 确认；预检 WARN 显示并记录后自动继续，无需输入 CONTINUE。
+ 
+ | 条件 | 当前配置（划掉的旧值已被上方 2026-10-13 更新取代） |
+ |---|---|
+ | 授权上限 | execute，允许完整调平→规划→仿真→预检→真机任务轨迹执行；也可根据需要停在 plan/prepare |
+-| 运动期间采集 | ~~不需要；沿用 `nokov_capture: null`~~ → **已启用**，见上方更新；2026-10-16 起同时采集 ATI 六维力 |
++| 运动期间采集 | ~~不需要；沿用 `nokov_capture: null`~~ → **已启用**，见上方更新；2026-10-16 起同时采集 ATI 六维力；2026-10-18 起同时录 USB 摄像头 1080p30 |
+ | 调平时 Nokov | 仍需要测量，用于调平；任务轨迹期间现在也录制 |
+-| 是否接入新采集适配器 | ~~不需要；当前没有现成 pipeline Nokov 采集适配器，本任务不为此开发或配置~~ → **已接入** `~/ribbon_ws/Nokov/nokov_capture_adapter.py`；2026-10-16 另接入 `~/ribbon_ws/ati/ati_capture_adapter.py`（力）与 `~/ribbon_ws/ati/ati_force_plot.py`（绘图） |
++| 是否接入新采集适配器 | ~~不需要；当前没有现成 pipeline Nokov 采集适配器，本任务不为此开发或配置~~ → **已接入** `~/ribbon_ws/Nokov/nokov_capture_adapter.py`；2026-10-16 另接入 `~/ribbon_ws/ati/ati_capture_adapter.py`（力）与 `~/ribbon_ws/ati/ati_force_plot.py`（绘图）；2026-10-18 另接入 `~/ribbon_ws/camera/usb_capture_adapter.py`（1080p30 视频） |
+ | 可选 ribbon_workspace | 当前省略，原因和后续启用条件见 4.6 |
+-| 名义夹持点 | ~~fer_hand_tcp~~ → **`fer_ribbon_tcp`**（`fer_link8` + 局部 Z 0.008 m）；名义局部偏移零，不声称已实测重合 |
++| 名义夹持点 | ~~fer_hand_tcp~~ → **`fer_ribbon_tcp`**（`fer_link8` + 局部 Z 0.058 m）；名义局部偏移零，不声称已实测重合 |
+ 
+ 授权适用于用户给定的实验目标，不等于允许任意轨迹、去除保护或修改硬件参数。缺少具体目标时先确定任务内容，不自行挑选示例执行。用户之后缩小范围或要求停止时按新指令执行。
+ 
+@@ -373,7 +469,7 @@
+ 
+ 可给另一个大模型以下指令：
+ 
+-> 你是 Franka–ribbon 实验的 AI 操作助手。先阅读 `/home/zhaoyunzyq/ribbon_ws/pipeline/docs/RIBBON.md` 的第一部分，再按本次任务查阅同一文件的第二部分。仅通过终端操作，只阅读 docs 内文档和本任务生成的文件；可在任意位置写任务文件。根据需要选择观测、调平、微动、归位、轨迹执行或完整 pipeline，沿用本文已确认的材料轴、名义 TCP 夹持点、运动期间采集（Nokov + ATI 力）和 execute 授权，根据具体目标调用，保留交互和检查，并依据本次测量及回执报告结果。我的具体任务是：〈填写目标与执行范围〉。
++> 你是 Franka–ribbon 实验的 AI 操作助手。先阅读 `/home/zhaoyunzyq/ribbon_ws/pipeline/docs/RIBBON.md` 的第一部分，再按本次任务查阅同一文件的第二部分。仅通过终端操作，只阅读 docs 内文档和本任务生成的文件；可在任意位置写任务文件。根据需要选择观测、调平、微动、归位、轨迹执行或完整 pipeline，沿用本文已确认的材料轴、名义 TCP 夹持点、运动期间采集（Nokov + ATI 力 + USB 摄像头 1080p30 视频）和 execute 授权，根据具体目标调用，保留交互和检查，并依据本次测量及回执报告结果。我的具体任务是：〈填写目标与执行范围〉。
+ 
+ ---
+ 
+@@ -413,10 +509,11 @@
+ | 验证/执行已导出的轨迹 | execute_offline | 14 | dry-run 不连接；执行时无额外提示 |
+ | 完整调平、规划、仿真和可选执行；或复用 plan/prepare 检查点 | run_pipeline.py | 15、15.9 | 正常路径先调平；`--from-run` 跳过调平/规划，改为起点校验；任务执行另有 MOVE |
+ | 编写 run_pipeline 输入 | 任务 YAML | 16 | 文件格式与静态校验，不是运动入口 |
++| 批量提交、排序与自动派发 | robot_gateway（`robot_job`） | 18.3 | 只按序启动；MOVE 提示需用户确认，可远程 confirm 或 attach |
+ 
+ 根据当前需要直接选接口；run_pipeline 是其中一个组合接口，不是其他 API 的前置步骤。
+ 
+-远程托管工具（`read_franka_manual`、`robot_pipeline_*` 等）与本章 API 的对应关系见 18.2。已有任务 YAML 在 tool-chat/tool-agent 里用 `robot_pipeline_list_tasks` → `prepare_robot_pipeline_remote_task` 按路径准备，再交给 `robot_pipeline_submit` 登记，不必为了走工具而改写成 `prepare_robot_pipeline_spec` 的参数。
++远程托管工具（`read_franka_manual`、`robot_pipeline_*` 等）与本章 API 的对应关系见 18.2。批量提交、排序与自动派发见 18.3；队列只负责按序启动，不改变本章任何接口的确认方式。已有任务 YAML 在 tool-chat/tool-agent 里用 `robot_pipeline_list_tasks` → `prepare_robot_pipeline_remote_task` 按路径准备，再交给 `robot_pipeline_submit` 登记，不必为了走工具而改写成 `prepare_robot_pipeline_spec` 的参数。
+ 
+ ### 9. read_franka_state：读取机器人状态
+ 
+@@ -428,7 +525,7 @@
+ 
+ ### 10. nokov_recorder：观察与记录 ribbon 形状
+ 
+-先看在线资产，确认存在准确名称 `ribbon`：
++先看在线资产，确认存在准确名称 `ribbon_1021`：
+ 
+ ```bash
+ cd /home/zhaoyunzyq/ribbon_ws/pipeline
+@@ -439,7 +536,7 @@
+ 
+ ```bash
+ ~/ribbon_ws/Nokov/recorder/build/nokov_recorder --mode monitor --server 10.1.1.198 \
+-  --plane 'ribbon' --up-axis z
++  --plane 'ribbon_1021' --up-axis z
+ ```
+ 
+ `monitor` 主要显示数值，不是完整的三维形状查看器。单侧点接近共线时，平面法向可能不稳定；`rms/max_dev` 是到最佳拟合平面的距离，不是到两端连线的下垂量。即使 ribbon 已在一个平面里弯曲，平面残差也可能很小。
+@@ -448,11 +545,11 @@
+ 
+ ```bash
+ ~/ribbon_ws/Nokov/recorder/build/nokov_recorder --mode record --server 10.1.1.198 \
+-  --plane 'ribbon' --up-axis z --duration 2 \
++  --plane 'ribbon_1021' --up-axis z --duration 2 \
+   --outdir /home/zhaoyunzyq/ribbon_ws/Nokov/data --tag ribbon_y_shape
+ ```
+ 
+-从本次终端 `会话:` 行取得文件前缀。生成 `_markers.csv`、`_plane.csv`、`_rigid_bodies.csv` 和 `_meta.json`。**`--plane` 选择拟合集合，不会把 markers.csv 限制为这一侧**，分析时必须过滤 `source=markerset`、`set_name=ribbon`（当前在线名就是 `ribbon`，不是资产文件名 `ribbon+y`）。坐标单位 mm，为动捕世界系；没有 base 外参时不得直接作为机器人目标。
++从本次终端 `会话:` 行取得文件前缀。生成 `_markers.csv`、`_plane.csv`、`_rigid_bodies.csv` 和 `_meta.json`。**`--plane` 选择拟合集合，不会把 markers.csv 限制为这一侧**，分析时必须过滤 `source=markerset`、`set_name=ribbon_1021`（当前在线名就是 `ribbon_1021`，2026-10-22 前叫 `ribbon`；两者都不是资产文件名 `ribbon+y`）。坐标单位 mm，为动捕世界系；没有 base 外参时不得直接作为机器人目标。
+ 
+ 读取本次 `_markers.csv` 的两端高差、下垂及逐点残差（把路径替换为实际文件）：
+ 
+@@ -478,7 +575,7 @@
+ frames = {}
+ with open(sys.argv[1], newline='') as f:
+     for r in csv.DictReader(f):
+-        if r['source'] != 'markerset' or r['set_name'] != 'ribbon':
++        if r['source'] != 'markerset' or r['set_name'] != 'ribbon_1021':
+             continue
+         key = (int(r['wall_unix_ns']), int(r['frame']))
+         frame = frames.setdefault(key, {'wall_iso': r['wall_iso'], 'points': []})
+@@ -492,7 +589,7 @@
+     raise SystemExit('INSUFFICIENT_VISIBLE_POINTS')
+ k = max(valid)
+ v = frames[k]
+-result = {'set_name': 'ribbon', 'frame': k[1],
++result = {'set_name': 'ribbon_1021', 'frame': k[1],
+     'wall_unix_ns': k[0], 'wall_iso': v['wall_iso'],
+     'record_last_frame': max(frames)[1],
+     'age_to_record_end_ms': (max(frames)[0]-k[0])/1e6,
+@@ -543,7 +640,7 @@
+ 
+ 该点列是有限 marker 采样的单侧形状，不是完整曲面。若画图，使用同一帧的 3D 散点并标注 marker 名；沿材料的真实点序未标定时，不按名称编号随意连线。按 X 排序只适用于已知沿 X 单调展开的状态，折叠/回弯时可能产生错误拓扑。
+ 
+-判断“当前”时核对本次采集时间、`meta.complete`、`frames_written`、实际可见点数量与缺失值。用 `--mode list` 和资产定义核对期望点数（当前在线 `ribbon` 实测 10 点），不能把遮挡后剩下的两点当作完整 ribbon。调平算法只分析高差与下垂，不输出完整扭转角；另一侧未被测量时不要声称已获得全宽形状。
++判断“当前”时核对本次采集时间、`meta.complete`、`frames_written`、实际可见点数量与缺失值。用 `--mode list` 和资产定义核对期望点数（当前在线 `ribbon_1021` 12 点，另有端板 `x1` 4 点、`x0` 3 点），不能把遮挡后剩下的两点当作完整 ribbon。调平算法只分析高差与下垂，不输出完整扭转角；另一侧未被测量时不要声称已获得全宽形状。
+ 
+ ### 11. ribbon_level.py：分析、测量与调平
+ 
+@@ -652,7 +749,7 @@
+ | `--duration` | 默认 `max(1 s, 位移长度/0.005 m/s, 转角绝对值/2 deg/s)`；显式值不得小于 0.5 s |
+ | `--settle` | 默认 0.3 s 末尾驻留 |
+ | `--max-step-mm` | 默认每轴 30 mm 上限；不是三维位移模长上限，也不是累计拉伸保护 |
+-| `--align-ribbon-up` | 宽面朝上模式：只做旋转，要求平移与 `--droll-deg` 均为 0；每次最多 2°、误差上限 20°、连接点保持法兰外 8 mm、时长下限 2 s；调平程序在进入升降/拉直之前自动调用 |
++| `--align-ribbon-up` | 宽面朝上模式：只做旋转，要求平移与 `--droll-deg` 均为 0；每次最多 2°、误差上限 20°、连接点保持法兰外 58 mm、时长下限 2 s；调平程序在进入升降/拉直之前自动调用 |
+ | `--force-limit` | 默认力 upper/lower=50/40 N；设置 F 时源码设 upper=F、lower=0.8F；不作为任务常规调节项 |
+ | `--dry-run` | **会连接真机读取状态**，不发运动、不执行恢复或碰撞阈值设置；不是离线校验 |
+ | `--no-confirm` | 存在但已无实际作用：`confirm` 默认即为 false，且没有任何选项能打开确认闸门；调平程序仍会传入该参数 |
+@@ -718,6 +815,15 @@
+ > `force_capture` / `force_plot_preview`（或 `force_plot_warning`）。授权、MOVE 确认、
+ > 保护与边界检查均不变；调平阶段不使用力传感器。现场前提、标定退化与首次上机结果见 15.8。
+ 
++> **2026-10-18 更新（USB 摄像头）**：按用户要求，execute 模式在动捕/力采集启动的**同一时刻**
++> 再启动一路 USB 摄像头录像（`tools/pipeline_adapters.yaml` 的 `usb_capture` →
++> `~/ribbon_ws/camera/usb_capture_adapter.py`）。默认 1920x1080 @ 30 fps，运动结束后
++> 随停止文件一起收尾。它默认开启且与动捕/力采集**同等严格**：打不开、中途断流或未覆盖
++> 运动时段都会以 `CAMERA_*` 错误码中止，不会在缺视频时继续真机运动；置
++> `usb_capture: null` 即关闭。结果键为 `result.json` 的 `camera_capture`，产物为
++> `usb_camera_<run_id>.mp4`、`_frames.csv` 与 `_meta.json`。授权、MOVE 确认、保护与边界
++> 检查均不变；调平阶段不使用摄像头。详见 15.10。
++
+ - 任务 YAML 使用本文约定的 base 轴向；名义夹持点为 fer_ribbon_tcp，省略可选 ribbon_workspace，保留 X guard。
+ - 调平动作（宽面对齐、松开、升降、拉直）由程序自动逐条执行，不再逐次输入 `MOVE`；最终执行 MOVE 仍按当前提示处理，不预填确认词。预检 WARN 显示并记录后自动继续，无需输入 CONTINUE。
+ - execute 授权不指定运动内容：没有具体轨迹目标时不自行运行示例。
+@@ -746,9 +852,11 @@
+ 在新运行目录里校验并复制源运行的 task/trajectory/guard/起点，按源 level 复用仿真（源为 `plan` 时补跑；
+ 预检仍重跑），execute 时在 `robot_prepare` 前增加 `start_check`。`--from-run` 只能配 `--mode prepare/execute`；
+ 不能与 `--task`、`--scene`、`--skip-leveling` 同用。源运行目录保持不变。
++SSH 任务网关封装 `prepare`/`execute` 复用（`submit_resume`，见 18.2）；`execute --from-run` 进入普通队列，运行中的提示用 `robot_pipeline_confirm` 远程确认或 attach 处理。
+ 
+ 配置 `nokov_capture` 时，最后执行部分另有 `capture_start` 和 `capture_finish`；配置
+-`ati_capture` 时另有 `force_start` 和 `force_finish`。两路采集都在 `execution_confirm` 之后、
++`ati_capture` 时另有 `force_start` 和 `force_finish`；配置 `usb_capture` 时另有
++`camera_start` 和 `camera_finish`。各路采集都在 `execution_confirm` 之后、
+ `robot_execute` 之前启动（因此是同时开启），在运动结束后各自收尾。
+ 任一阶段失败均停止后续步骤；pipeline 不自动重试。
+ 
+@@ -758,7 +866,7 @@
+ |---|---|---|---|
+ | `plan` | 硬件可用且交互时是；连不上时降级为默认起点，不运动 | 否 | `planned` |
+ | `prepare`（默认） | 硬件可用且交互时是；连不上时降级为默认起点，不运动 | 否 | `offline_checks_passed` |
+-| `execute`（不带 `--from-run`） | 是，始终要求调平 | 是，需最终确认 | 默认（动捕和力采集都开）`executed_and_captured`；两路采集通道都置 `null` 才为 `executed_without_capture` |
++| `execute`（不带 `--from-run`） | 是，始终要求调平 | 是，需最终确认 | 默认（动捕+力采集+USB 摄像头都开）`executed_and_captured`；所有采集通道都置 `null` 才为 `executed_without_capture` |
+ | `execute --from-run` | 否，跳过调平/规划；`start_check` 在确认 `HOME` 后可用 `home_pose` 归位（15.9） | 是，需最终确认 | 同上；`result.json` 另有 `resume_source` / `start_state_check` |
+ 
+ 注意：`prepare` 模式不运行名为 `robot_prepare` 的阶段。真机准备适配器只在 `execute` 模式调用；
+@@ -795,7 +903,7 @@
+ PY
+ ```
+ 
+-如指定 scene，将 `load_task(p)` 改为 `load_task(p, '/绝对路径/scene.yaml')`。上面的 `load_task(p)` 会要求 `start_state` 带 `ribbon_mount: flange_8mm_v2`；pipeline 的首次校验允许暂缺，但调平后会强制。校验通过仅证明配置可解析，不能证明可达或可执行。pipeline 本身也会再校验一次。
++如指定 scene，将 `load_task(p)` 改为 `load_task(p, '/绝对路径/scene.yaml')`。上面的 `load_task(p)` 会要求 `start_state` 带 `ribbon_mount: flange_58mm_v3`；pipeline 的首次校验允许暂缺，但调平后会强制。校验通过仅证明配置可解析，不能证明可达或可执行。pipeline 本身也会再校验一次。
+ 
+ #### 15.2.1 编写 YAML 必须完成的 prepare 验证（2026-10-18）
+ 
+@@ -903,9 +1011,9 @@
+ python3 tools/run_pipeline.py --from-run pipeline_runs/<plan_run_id> --mode prepare
+ ```
+ 
+-`--skip-leveling` 只适用于 `plan`/`prepare`，使用 `--ribbon-params` 里 `planner_start_pose_file` 的现有默认起点；正常 `execute` 必须调平，`--from-run` 也不接受它（复用本身即跳过调平）。若终端不是 PTY，`plan`/`prepare` 会自动走同一条默认起点路径并在 `result.json` 标记；正常 `execute` 的最终 `MOVE` 确认仍要求交互终端，`--from-run execute` 的 `HOME` 起点归位确认同样要求交互终端。
+-
+-仿真默认不开 Gazebo 界面，默认录制相机视频；任务采集结束后默认生成 ribbon 交互 HTML（`videos/ribbon_viewer.html`），两个 MP4 默认不生成。需要现场图形窗口时才加 `--gui`；关闭录像用 `--no-video` / `--no-ribbon-video`；需要两个 MP4 时加 `--ribbon-videos`。授权、预检和 `MOVE` 确认保持原流程，GUI 仍需远端可用图形环境：
++`--skip-leveling` 只适用于 `plan`/`prepare`，使用 `--ribbon-params` 里 `planner_start_pose_file` 的现有默认起点；正常 `execute` 必须调平，`--from-run` 也不接受它（复用本身即跳过调平）。若终端不是 PTY，`plan`/`prepare` 会自动走同一条默认起点路径并在 `result.json` 标记；pipeline 仍要求交互式终端（PTY）；网关的 tmux 会话提供该 PTY，可用 `robot_pipeline_confirm` 远程发送合法答案，也可 attach 输入。`--from-run execute` 的 `HOME`/`RELEVEL`/`QUIT` 同样走这一确认通道。
++
++仿真默认不开 Gazebo 界面，默认录制相机视频；任务采集结束后默认生成 ribbon 交互 HTML（`videos/ribbon_viewer.html`），两个 MP4 默认不生成。需要现场图形窗口时才加 `--gui`；关闭录像用 `--no-video` / `--no-ribbon-video`；需要两个 MP4 时加 `--ribbon-videos`。授权、预检和 `MOVE` 确认保持原流程（可用 `robot_pipeline_confirm` 远程回答），GUI 仍需远端可用图形环境：
+ 
+ ```bash
+ python3 tools/run_pipeline.py \
+@@ -966,9 +1074,9 @@
+ 
+ 仿真阶段**默认无 Gazebo 界面**（只起物理服务器），因此不要求显示器；没有 `--headless` 参数——无头就是默认，开界面用 `--gui`。录像默认开启，关闭用 `--no-video`，它只是给人看的旁证：缺失或失败只写告警（`result.json` 的 `simulation_video_warning`），不会产生 `SIMULATION_*`。相机渲染与 1 kHz 控制回路在同一仿真进程里，分辨率×帧率过高会把仿真拖慢到回放超时（表现为 `SIMULATION_FAILED`），默认值已留有余量；不要为“看得更清楚”要求现场调高。
+ 
+-适配配置与任务 YAML 分离。默认 `robot_prepare`、`robot_execute` 调用 `tools/pipeline_offline_adapter.py`，最终通过 `franka_robot_driver/execute_offline` 执行；`nokov_capture` 指向 `~/ribbon_ws/Nokov/nokov_capture_adapter.py`，整段轨迹期间采集 ribbon markerset；`ati_capture` 指向 `~/ribbon_ws/ati/ati_capture_adapter.py`，同一时段记录 ATI Mini45 六维力/力矩。机器人 IP 从 ribbon 参数读取，目前为 `172.16.0.3`；Nokov server 当前为 `10.1.1.198`；力传感器为 `172.16.0.5:49152`（写在该适配配置的 `--ip` 里）。这些是现场配置，不应随任务位姿修改。
+-
+-`nokov_capture` / `ati_capture` 不能只填 `true`：它们必须是满足采集回执协议的命令参数数组，默认值为已核对的适配器调用。要改变采集行为（换 markerset、改设备 IP、关闭某一路）由维护者修改该适配配置：置为 `null` 即关闭那一路，所有通道都关闭时成功结果才是 `executed_without_capture`。协议可查 docs 内的 [PIPELINE.md](PIPELINE.md)，目标模型不得自行读取 run_pipeline 源码或既有适配配置；有实现差异时请维护者提供已核对的说明/适配器。
++适配配置与任务 YAML 分离。默认 `robot_prepare`、`robot_execute` 调用 `tools/pipeline_offline_adapter.py`，最终通过 `franka_robot_driver/execute_offline` 执行；`nokov_capture` 指向 `~/ribbon_ws/Nokov/nokov_capture_adapter.py`，整段轨迹期间采集 ribbon markerset；`ati_capture` 指向 `~/ribbon_ws/ati/ati_capture_adapter.py`，同一时段记录 ATI Mini45 六维力/力矩；`usb_capture` 指向 `~/ribbon_ws/camera/usb_capture_adapter.py`，同一时段录 1920x1080@30 视频。机器人 IP 从 ribbon 参数读取，目前为 `172.16.0.3`；Nokov server 当前为 `10.1.1.198`；力传感器为 `172.16.0.5:49152`（写在该适配配置的 `--ip` 里）；摄像头默认自动选择非内置 USB 设备（本机 `/dev/video2 "1080P USB Camera"`）。这些是现场配置，不应随任务位姿修改。
++
++`nokov_capture` / `ati_capture` / `usb_capture` 不能只填 `true`：它们必须是满足采集回执协议的命令参数数组，默认值为已核对的适配器调用。要改变采集行为（换 markerset、改设备 IP、换摄像头/分辨率、关闭某一路）由维护者修改该适配配置：置为 `null` 即关闭那一路，所有通道都关闭时成功结果才是 `executed_without_capture`。协议可查 docs 内的 [PIPELINE.md](PIPELINE.md)，目标模型不得自行读取 run_pipeline 源码或既有适配配置；有实现差异时请维护者提供已核对的说明/适配器。
+ 
+ #### 15.6 返回值与产物
+ 
+@@ -1008,6 +1116,7 @@
+ | `robot_ready.json`、`robot_prepare_state.json`、`robot_prepare_boundary.json` | execute 模式的准备证据及实测 X 余量 |
+ | `robot_result.json`、`offline_execute_*/offline_*/result.json` | 默认执行适配器及原生执行回执 |
+ | `ati_force_<run_id>.csv`、`force_result.json`、`force_status.json` | 运动期间的 ATI 六维力原始记录（`wall_unix_ns` 与 Nokov CSV 同源，可离线对齐）及采集回执；标定不可用时记为 `calibrated=false`，各列只有原始 counts（见 15.8） |
++| `usb_camera_<run_id>.mp4`、`usb_camera_<run_id>_frames.csv`、`usb_camera_<run_id>_meta.json`、`camera_result.json`、`camera_status.json` | 运动期间的 USB 摄像头视频（默认 1920x1080@30 H.264）、逐帧时间戳/模式信息和采集回执；`frame_index` 与视频帧号一一对应，`wall_unix_ns` 与 Nokov/ATI 同源（见 15.10） |
+ | `force/force.png`、`force/force_plot.json` | 运动结束后自动生成的力数据图（Fx/Fy/Fz/Tx/Ty/Tz 与 \|F\|/\|T\| 共 8 个面板，运动窗口用底色标出）及绘图回执；`result.json` 用 `force_plot_preview` / `force_plot_warning` 报告，`--no-force-plot` 可关闭 |
+ 
+ `motion_summary.txt` 由 `run_pipeline.py` 收尾时写入本次运行根目录；`franka_api.py` 写 API 运行根目录；
+@@ -1038,6 +1147,13 @@
+ `Output/jobs/<id>/` 的失败任务没有移动（任务目录与 `Output/jobs.sqlite` 绑定），其运行目录仍在
+ `Output/jobs/<id>/outputs/<run>/`。归档只移动目录，不改 `result.json`、日志或轨迹；恢复时用 `mv` 移回同名相对路径。
+ 
++**失败构成（2026-10-22 盘点，含分组子目录）。** 65 个失败中：规划阶段 49 个（40 个“直线段只走了一部分”，集中在
++`ribbon_feasibility_20261018` 与 `e4_individual_limits_20261018` 两批扫描；7 个 X 下限；1 个无完整解；1 个规划器进程退出）、
++真机执行中断 5 个（4 次 libfranka `communication_constraints_violation` reflex、1 次执行侧 X 下限）、
++丝带调平 4 个、仿真 3 个、预检 2 个、适配器未配置 1 个、工作区被占用 1 个。`Output/jobs` 另有 7 个失败任务
++（规划 3、真机 reflex 2、调平 1、`ROBOT_NOT_IDLE` 1）和 7 个取消任务。真正动过机械臂的失败只有 7 次，
++其余都停在运动之前；分类明细见归档目录的 `ANALYSIS.md` 与 `index.tsv`。
++
+ 默认准备适配器要求机器人 idle、各关节速度绝对值 ≤0.02 rad/s、实测关节与轨迹首点最大差 ≤0.01 rad，且 X 边界满足要求。起点不符会拒绝，**不自动移动到首点**，不自动错误恢复、不发送夹爪动作。适配器本身仍不移动；`--from-run` 的 `HOME` 归位发生在 `robot_prepare` 之前，需操作员确认，且受 15.9 的关节/TCP/朝向/X 包络限制。
+ 
+ Gazebo/预检目前沿用旧执行器模型，默认真机执行器使用 `quintic_hermite`。准备阶段会用当前执行器 dry-run 检查，但仿真并非同一命令流的完整验证。仿真需七关节最大误差均 ≤0.02 rad，记录覆盖主轨迹；相邻记录间隔超过 100 ms 时只允许“静止空洞”（空洞两侧实测关节逐关节相同），运动中仍然失败。这些指标不预测真实 ribbon 接触和受力。现场空间仍需核对。
+@@ -1046,7 +1162,7 @@
+ |---|---|
+ | `validate` 失败、unknown fields、start_state_file 缺失 | 修正字段、单位或实际文件路径，重新进行静态校验；部分 Python 校验异常在外层显示 INTERNAL_ERROR，应读 message |
+ | `CALIBRATION_FAILED` / ribbon_level 暂停 | 检查 marker 可见性、端点识别、拉伸响应、累计状态；处理现场再决定恢复，不盲目加步长或重置累计量。若报方向低于下限，先确认 `marker_sets` 没选错；确认是同一条带子时请维护者下调 `axis_ratio_min`，不要据此判定 ribbon 没沿 x 放。plan/prepare 若只是连不上设备，应走默认起点降级，而不是反复 RESUME |
+-| `DEFAULT_START_POSE_MISSING` / `DEFAULT_START_POSE_INVALID` | 降级路径找不到或不能解析 `planner_start_pose_file`：检查 `--ribbon-params` 的文件路径、起点文件是否存在、是否带 `ribbon_mount: flange_8mm_v2` 和七关节 `joint_positions`。不能伪造起点继续规划 |
++| `DEFAULT_START_POSE_MISSING` / `DEFAULT_START_POSE_INVALID` | 降级路径找不到或不能解析 `planner_start_pose_file`：检查 `--ribbon-params` 的文件路径、起点文件是否存在、是否带 `ribbon_mount: flange_58mm_v3` 和七关节 `joint_positions`。不能伪造起点继续规划 |
+ | `PLANNING_FAILED` / incomplete linear path | 看 planning.log 和失败预览；核对轴、姿态、关节余量和路径。不能未经用户同意将 linear 改成 free |
+ | `RIBBON_X_FLOOR_FAILED` / `RIBBON_GUARD_*` | 查实测边界、规划路径和 guard 配对；不能通过移动下界或去标记规避 |
+ | `SIMULATION_*` | 读取 simulation.log 与 summary（含 `video` 字段），查控制器、跟踪/覆盖；无界面已不是原因，直接看日志；不直接跳到真机。录像失败本身不会产生 `SIMULATION_*` |
+@@ -1059,8 +1175,17 @@
+ | `START_CORRECTION_FAILED` / `START_CORRECTION_INCOMPLETE` | `home_pose` 启动/连接/回执失败，或归位后重测仍 >0.008 rad。读 `start_correction`、`start_state_check.after_correction` 和 `start_correction.log`；不要假定机械臂已回到起点，先按现场状态处理，必要时重新调平 |
+ | `SIMULATION_REUSE_CHANGED` | 复用仿真前发现源 summary/actual/commanded 或轨迹哈希变化。回到源运行确认文件，或不用 `--from-run` 重跑 prepare；不能改源文件后继续 |
+ | `robot_execute` 失败 / `EXECUTION_UNCONFIRMED` | 保留日志与审计，按可能已经部分移动处理，先确认现场状态；不自动恢复并重发 |
++| `communication_constraints_violation` / `control_command_success_rate` 明显偏低 | **常见 FCI 通信/实时性 reflex，不是轨迹、起点、权限、ribbon guard 或碰撞阈值错误。** 机器人可能已执行 startup transition 和一小段轨迹；先读新的 `read_franka_state` 确认 `robot_mode=1`、关节速度很小且无活动 job，再按原不可变规格重跑。不要改轨迹、重新规划或放宽碰撞阈值；若重复出现，再查网线/接头/交换机、机器人网段占用、IRQ/CPU 隔离和后台负载 |
+ | `PIPELINE_BUSY` / ROS 域冲突 | 查现有会话；不要杀掉不明进程或删除锁文件。锁文件存在本身不等于被占用 |
+ | `STAGE_TIMEOUT` | 查实际卡住阶段；超时不代表未运动，尤其在执行阶段 |
++
++> **通信 reflex 的判读（2026-10-19 实测）**：日志出现
++> `libfranka: Move command aborted: motion aborted by reflex! ["communication_constraints_violation"]`
++> 与 `control_command_success_rate: 0.11` 时，应按 FCI 控制命令未按时到达处理，不要先怀疑轨迹。
++> 正常成功运行的成功率通常约 0.95–0.99；明显低于 0.9 时先不要继续完整轨迹。该错误可能间歇出现，
++> 同一规格重跑通常可恢复；但必须由用户确认现场空间、ribbon 余量和 reflex 已清除后发起，
++> **不自动重试**，也不要在 reflex 未清除时发送新的运动命令。若多次重跑仍复现，再按通信链路和
++> 主机实时性排查（网线/接头/交换机、`172.16.0.0/24` 网段占用、`eno1` IRQ 亲和性、CPU 隔离、后台负载）。
+ 
+ #### 15.8 ATI 六维力采集：现场前提与判读（2026-10-16）
+ 
+@@ -1101,7 +1226,7 @@
+ **用途：** 把耗时的调平/规划/仿真和最终 execute 拆开。`plan`/`prepare` 每个离线阶段成功后写
+ `checkpoint.json`；之后用 `--from-run` 在新目录复用已冻结的输入，跳过调平/规划/仿真（按源 level），
+ 但**不跳过**预检、`robot_prepare`、最终 `MOVE` 和采集。execute 前按关节空间比较当前起点与
+-`trajectory.csv` 首点，必要时允许操作员确认一次 `home_pose` 归位。
++`trajectory.csv` 首点，必要时通过远程确认 `HOME` 归位，或 `RELEVEL`/`QUIT` 退出。
+ 
+ **为什么必须比较关节，不只比较 TCP：** 7 自由度冗余臂可以以不同关节角回到同一 TCP 位姿；
+ 调平或上一次执行后 TCP 只差几毫米、关节却可能差几十度（本机 2026-10-18 实测 B/G 同 TCP 差 68.7°）。
+@@ -1185,7 +1310,7 @@
+ - TCP 朝向相对起点的最大偏离 `<= 2.0°`；
+ - TCP X 不低于 guard 的 `minimum - 0.65 mm`（与执行器 ribbon X 容差一致）。
+ 
+-通过后显示预测值，要求输入：
++通过后显示预测值，等待输入（可由 `robot_pipeline_confirm` 远程发送，或 attach 输入）：
+ 
+ ```text
+ HOME      用 home_pose 归位到本次轨迹首点；归位后重测，必须 <=0.008 rad
+@@ -1193,14 +1318,14 @@
+ QUIT      退出
+ ```
+ 
+-选择 `HOME` 后，流程会再读一次当前关节并重跑同一套包络检查（操作员思考期间机械臂被移动时会重新
++选择 `HOME` 后，流程会再读一次当前关节并重跑同一套包络检查（等待确认期间机械臂被移动时会重新
+ 判定），通过后才调用 `home_pose`；归位后再读一次，仍 >0.008 rad 则以 `START_CORRECTION_INCOMPLETE`
+ 退出。`--on-start-drift abort` 不询问，超过直执行阈值直接退出；非交互终端也不会询问。
+ 
+ `home_pose` 的目标文件是本次目录里由轨迹首点生成的 `planned_start_pose.yaml`，不是共享的
+ `planner_start_pose_file`（后者可能已被后来的调平改写）。`HOME` 是**真实运动**；`home_pose`
+ 不做 MoveIt 碰撞检查，也没有自带的 ribbon X guard。本流程的包络是离线运动学预测，只约束
+-TCP/朝向/X，不估计 ribbon 张力、接触或绳索/夹具碰撞，现场必须确认工作空间和余量。
++TCP/朝向/X，不估计 ribbon 张力、接触或绳索/夹具碰撞；启动前仍须确认工作空间和余量（可由用户远程核对状态与录像，不由本工具自动判定安全）。
+ 
+ **为什么 `RELEVEL` 不能继续用旧轨迹：** 重新调平会改变起点关节，而 `trajectory.csv` 第一行绑定
+ 的是旧起点；7 自由度冗余臂即使 TCP 相同也可能在不同关节解上。`RELEVEL` 的语义是“退出，重跑完整
+@@ -1288,6 +1413,57 @@
+   第一次现场使用请用短、低风险轨迹验证 direct / HOME / RELEVEL 三条路径。
+ - 大漂移的自动归位需要位姿约束零空间自运动（OMPL constrained 或 Jacobian 零空间积分），
+   当前实现没有做；在此之前，大漂移一律重新调平+规划。
++
++#### 15.10 USB 摄像头录像：默认 1080p30 与判读（2026-10-18）
++
++- **启用范围**：只有 `execute` 模式、`execution_confirm` 通过之后才启动，与 Nokov/ATI
++  同一时刻；调平阶段不使用摄像头。默认开启且与动捕/力采集同等严格：打不开、中途断流、
++  没有覆盖运动时段、文件缺失或为空都会以 `CAMERA_*` 中止，不会在缺视频时继续真机运动。
++  置 `usb_capture: null` 即关闭；成功结果仍是 `executed_and_captured`，只是没有视频。
++- **实现**：`~/ribbon_ws/camera/usb_capture_adapter.py`，复用 `camera/usb_cam.py` 的
++  V4L2 设备枚举，不新增 ROS 包、不依赖机械臂 SDK。默认自动选择非内置 USB 摄像头；
++  本机 sysfs 识别到内置 `/dev/video0` 与 `1080P USB Camera`（通常为 `/dev/video2`），
++  以现场 `python3 ~/ribbon_ws/camera/usb_capture_adapter.py --list` 为准。
++- **模式**：请求 1920x1080 @ 30 fps，输入 MJPEG（UVC 在 USB2.0 下只有 MJPEG 能跑满
++  1080p30），输出 H.264（`avc1/.mp4`）。打开后核对实际宽高；设备不给 1920x1080 时
++  默认直接失败，不静默录成低分辨率；确实要降级时加 `--allow-size-fallback`，回执会记
++  `size_fallback=true` 和实际尺寸。帧率同时记录设备回报值和实测值；实测平均低于目标
++  80% 只写 warning，不改变采集判据；实际跑在 60fps 时按名义 30fps 丢帧并记
++  `dropped_frames`。
++- **产物**（本次 `pipeline_runs/<run_id>/` 下）：
++  - `usb_camera_<run_id>.mp4`：视频；编码不可用时自动回退 `mp4v/XVID/MJPG`，实际编码见回执。
++  - `usb_camera_<run_id>_frames.csv`：逐帧
++    `frame_index,wall_unix_ns,wall_iso,elapsed_s,width,height`。`frame_index` 从 0 开始，
++    与视频帧号一一对应；`wall_unix_ns` 与 Nokov/ATI 同源，可按时间戳离线对齐。
++  - `usb_camera_<run_id>_meta.json`：设备、实际分辨率、帧率、编码、帧数、warning。
++  - `camera_status.json`：运动期间心跳（原子写）；`camera_result.json`：最终回执，
++    字段含 `completed / sample_count / first_frame_unix / last_frame_unix / files /
++    width / height / nominal_fps / measured_fps / codec / video_readable / warnings`。
++  - `result.json` 里的键是 `camera_capture`；`artifacts` 会列出所有文件的绝对路径。
++- **运行时序**：适配器写出第一帧、状态变为 `ready` 后才开始 `robot_execute`；运动结束后
++  流水线等到运动结束之后的一帧，再写 `camera_stop.json`。因此视频包含运动前很短的预录
++  和运动后的一帧收尾，不是从第一个运动指令才开始采集。
++- **CPU**：H.264 编码在 1080p30 下约占用 1 个 CPU 线程；适配器把 OpenCV 线程数限制为 2，
++  且真机执行前流水线会关闭 Gazebo 释放主机资源。若现场主机仍跟不上，优先把
++  `--codec` 改为 `mp4v` 或降低分辨率（需同步改 `pipeline_adapters.yaml`），不要直接
++  放宽 1 kHz 控制回路的实时要求。
++- **验证范围**：`camera/tests` 与 `pipeline/tools/tests/test_pipeline_camera_integration.py`
++  已通过无硬件测试（`--demo` 合成画面、假执行器/假动捕/假力采集），覆盖 1080p30 落盘、
++  停止文件/SIGTERM 收尾、原子状态、三路同时启动、失败阻止真机等路径。2026-10-19 又在
++  本机真实 USB 摄像头上单独验证：自动选择 `/dev/video2`、MJPG 输入、H.264 输出、
++  1920x1080 @ 30 fps，实测平均约 29.8 fps，停止文件协议收尾正常。**尚未与真机机械臂
++  同场跑过整条 execute 链路**；首次上机前仍建议按 15.10 的 `--list` 和单独录像命令
++  再确认一次设备、分辨率与帧率，再走完整 pipeline。
++- **单独使用**：
++
++  ```bash
++  python3 ~/ribbon_ws/camera/usb_capture_adapter.py --list
++  python3 ~/ribbon_ws/camera/usb_capture_adapter.py --run-dir ~/camera_runs/probe --duration 10
++  python3 ~/ribbon_ws/camera/usb_capture_adapter.py --run-dir ~/camera_runs/demo --demo --duration 2
++  ```
++
++  协议、产物列、状态/回执字段与 `CAMERA_*` 错误码详见 docs 内的 [PIPELINE.md](PIPELINE.md)
++  的 §usb_capture。录像只用于记录与事后分析，不参与任何实时闭环控制。
+ 
+ ### 16. 任务 YAML：run_pipeline 的输入格式
+ 
+@@ -1385,7 +1561,7 @@
+ | `frame_id` | ribbon 任务只能为 `base` |
+ | `end_effector_link` | ribbon 任务只能为 `fer_ribbon_tcp` |
+ | `position_reference` | ribbon 任务只能为 `start` |
+-| `start_state_file` | 起点 YAML；必须含七个弧度制 `joint_positions`，可包在 `start_state` 下；本流程的 ribbon 任务还要求 `ribbon_mount: flange_8mm_v2`，缺失会在调平后的校验被拒。`--from-run` 生成的任务副本指向内部 `planned_start_pose.yaml`，该副本是复用记录，不是供重新编辑的新任务输入 |
++| `start_state_file` | 起点 YAML；必须含七个弧度制 `joint_positions`，可包在 `start_state` 下；本流程的 ribbon 任务还要求 `ribbon_mount: flange_58mm_v3`，缺失会在调平后的校验被拒。`--from-run` 生成的任务副本指向内部 `planned_start_pose.yaml`，该副本是复用记录，不是供重新编辑的新任务输入 |
+ | `start_state` | 可替代文件的内联起点，二者互斥；常规任务推荐只引用文件 |
+ | `start_state_source` | 推荐 `declared`；ribbon 禁止 `live` |
+ | `require_start_state` | 推荐 true，调平后 pipeline 强制 true |
+@@ -1462,7 +1638,7 @@
+ 
+ pro6000 的 ribbon-research hardware extension 已将本文档入口封装为固定参数 tools。read_franka_manual 仅能读取本目录的手册（即本文件），返回内容与 SHA256；不能指定任意路径。机器人状态、Nokov 查询/有限时长监视/记录、ribbon 分析/测量/会话状态、调平、归位、笛卡尔微动、已有轨迹校验/执行分别独立调用，不强制执行整个 pipeline。所有操作使用同一任务状态、日志、回执与成果清单。
+ 
+-本节描述的旧 hardware extension 托管包装会为归位/微动/已有 CSV 真机执行增加现场 MOVE 确认，这是另一条入口的行为，原生二进制本身没有此确认。启真平台 Adapter 2.3.5 已取消这三项额外等待，调用后直接启动原生程序，仅原生终端实际输入提示需要卡片。调平保留原生交互。dry_run 默认为 true；非运动不等于不占用 FCI 或不更新测量会话，执行时仍有独占锁。Nokov monitor 被宿主限定时长并以 SIGINT 正常结束。分析与归位/执行的输入仅来自明确指定的托管任务，进行路径和哈希校验，不能读取任意旧文件。
++归位/微动/已有 CSV 真机执行的托管包装会增加 MOVE 确认；不要把它误认为原生二进制本来就有此确认。该确认可由 `robot_pipeline_confirm` 远程发送当前提示的精确 choice，或 attach 输入；调平保留原生交互。dry_run 默认为 true；非运动不等于不占用 FCI 或不更新测量会话，执行时仍有独占锁。Nokov monitor 被宿主限定时长并以 SIGINT 正常结束。分析与归位/执行的输入仅来自明确指定的托管任务，进行路径和哈希校验，不能读取任意旧文件。
+ 
+ 当前 bridge 在标定前纯格式校验允许缺少 start_state；标定后实际规划仍使用冻结实测起点。此行为补充旧版示例，不能将未测起点编造为关节状态。
+ 
+@@ -1476,9 +1652,9 @@
+ 
+ 2026-10-16 两端约束重建：10 个侧边 marker 只覆盖带子两侧的观测段，重建不出两个末端。新增 fit_ribbon_full：中轴线从 **ribbon 端面中心**沿**法兰外侧指向**出发（**默认不加刚性直线段**，见下条更正），中段由 10 个 marker 的中线约束，末端落在 **ribbon_end 端面中心**（该资产唯一 marker 沿 Nokov 世界 z 减 25mm），横向仍按卡尺带宽展开，覆盖完整带长而非只有观测段。法兰点由 `flange_track` 给出：读 `trajectory.csv.ribbon_guard` 的 FK 链（base→fer_ribbon_tcp，链末端姿态取局部 axis，默认 z）+ `trajectory.csv` 关节角（帧墙钟 −`execution_started_at` 映射到轨迹时间）+ 外参 `T_world_base`（YAML 4x4，p_world=T@p_base，两侧单位均为米）变到 Nokov 世界系。该模式**必须显式给 `--world-base-extrinsic`**：给了 `docs/RIBBON.md` 早先“尚无外参”的限制才被有条件解除，外参错则整条中轴线跟着错，报告里如实标注来源。缺外参、缺 guard/trajectory、缺 ribbon_end 行或结果里没有 `execution_started_at` 时**不报错**，回落到只拟合观测段，并在 `end_constraints.reason` 写明原因；帧时间落在轨迹窗口外会被夹到端点并单独计数（`outside_trajectory_window`）。报告新增 `reconstruction`、`ribbon_length_m`、`observed_length_m`、`flange_vs_observed_tangent_deg`（校验“法兰外侧指向 = 带子走向”这一假设）、`end_gap_flange_mm`/`end_gap_marker_mm`，`ribbon_fit_diagnostics.json` 里还带 `end_constraints` 元信息。相关参数：`--end-frame-axis`、`--end-frame-offset-m`、`--clamped-length-m`、`--ribbon-end-set`/`--ribbon-end-marker-id`、`--ribbon-end-z-offset-m`、`--trajectory`、`--guard`。链路末端 FK 位置在实测起点上等于 guard 的冻结 X 下限（0.4094m），可用来交叉确认链选对了。
+ 
+-链末端与法兰的换算（2026-10-16 现场确认，已固化成常量并有回归测试）：guard 链是 Franka 标准 modified DH（`d1=0.333, d3=0.316, a4=0.0825, a5=−0.0825, d5=0.384, a7=0.088`）后面两级固定变换——**倒数第二级 `+0.107 m` 就是机器人法兰面**（对应 DH 的法兰偏移），**最后一级 `+0.008 m` 是 ribbon 端面与法兰面之间的 8mm 连接件**。所以链末端 `fer_ribbon_tcp` 恰好是 **ribbon 端面中心**，`--end-frame-offset-m` 用默认 `0`（**不要**把 0.107 当成“超出法兰”，否则会多算 107mm）。`FLANGE_CONNECTOR_M=0.008` 与 `CLAMPED_LENGTH_M=0.05` 是常量，`fit_ribbon_full`/CLI/报告默认都取它们；`--clamped-length-m` **以 ribbon 端面中心（= 连接件/链末端）为起点**——现场“从法兰算起约 5cm”的实际口径就是从连接件起算，所以直接是 50mm，不需要再减 8mm。回归测试 `test_guard_chain_tip_is_flange_plus_connector` 会用冻结 guard 样本核对这两级偏移，链格式变了会报警。
+-
+-Nokov↔base 标定（2026-10-16，第二版：两个独立三点刚体）：独立小程序 `tools/world_base_calibrate.py`。**第一版用单个两点资产 `ribbon_mid` 失败**，原因是两点模板只有一条 linkage 约束，而两个端部 marker 跨在**柔性**带子两端——调平过程一拉紧/放松，两端间距就变（实测 1081.0 → 1000.3mm，压缩 7.5%），唯一的约束不满足，整个 set 解不出来，两颗 marker 退化成了未命名点（`source=other`）。现改为**两个三点刚体**（`TemplateType=0`，都含 `Marker1/2/3`、`Size=4` 对应 8mm 球）：**`ribbon_x1` 的 `Marker1` = 远端（静止端）**，**`ribbon_x0` 的 `Marker3` = 近端（法兰端）**。每个 set 内部三点互距恒定（同一夹具），所以 linkage 永远满足、且对整体平移不变——这是它比两点跨软带子稳的根本原因。默认参数就是这两个资产/名字，`--far-end-set/--far-end-marker/--near-end-set/--near-end-marker` 可覆盖；给 `--marker-set` 仍可回到"单一资产里按名字取两端"的旧口径（此时需同时给 `--far-end-marker/--near-end-marker`）。角色**一律按资产+marker 名判定，绝不按世界 x**：实测世界 x 次序与角色相反（`ribbon_x1/Marker1` 在 x 小端），程序把 `world_x_order` 只当事实报出来。录制只对这一次采集加 `--other-markers`（主线采集不受影响）。近端按此顺序取：① `ribbon_x0/Marker3`；② 显式 `--near-end-other-index N`；③ 自动从 `source=other` 的未命名点里挑"到远端距离最接近 `--nominal-length-m`"的那个，必须落在 `--end-distance-min-m/--end-distance-max-m` 窗口内、与次优候选拉开 5cm 以上，否则放弃并降级（绝不硬猜）；结果里如实记 `near_end_source`、`other_points_seen`、`other_fallback_rejected`。实测 `ribbon_x1/Marker1` 与 `ribbon_x0/Marker3` 相距 **1.0001 m**（与标称 1.0m 吻合，第一版的 1.081m 问题随之消失）。于是 `远端端面中心 = 远端 marker − 25mm·ẑ`，`法兰中心(世界) = 近端 marker − 25mm·ẑ − 8mm·â`，`â` 默认取**两端连线方向**（`--connector-axis ribbon`；两端各 25mm 的 z 偏置相减后抵消，所以两 marker 连线就是两端中心连线），也可切现场口径的沿世界 x（`--connector-axis world_x`），程序报出两者夹角与差异（实测 14.0° / 1.9mm）。旋转按现场确认取 `R=diag(-1,-1,1)`（x/y 相反、z 一致），平移 `t = 法兰中心(世界) − R·法兰中心(base)`。机器人侧**只读 franka 状态快照**：`法兰中心(base) = (O_T_EE·F_T_EE⁻¹)[:3,3]`（libfranka 的 16 元素数组是**列主序**、平移在末列；快照里两个矩阵都有，已用冻结 guard 链交叉验证到 1e-3 以内），因此**不需要 FK 链**，也就绕开了"调平时 `trajectory.csv.ribbon_guard` 还不存在"的问题。⚠️ 快照与动捕采集**必须同一静止姿态**，且快照默认限龄 15 分钟（超龄直接拒绝、降级），否则算出来的平移是错的——这也是它必须紧跟在调平之后跑的原因。结果持久化到 `tools/state/world_base.yaml`（含标定时间、输入快照/CSV、两端位置、间距、角色与来源、z/连接件偏置），`pipeline_videos.load_extrinsic` 可直接读。
++链末端与法兰的换算（2026-10-16 现场确认，已固化成常量并有回归测试）：guard 链是 Franka 标准 modified DH（`d1=0.333, d3=0.316, a4=0.0825, a5=−0.0825, d5=0.384, a7=0.088`）后面两级固定变换——**倒数第二级 `+0.107 m` 就是机器人法兰面**（对应 DH 的法兰偏移），**最后一级 `+0.058 m` 是 ribbon 端面与法兰面之间的 58 mm 连接件**。所以链末端 `fer_ribbon_tcp` 恰好是 **ribbon 端面中心**，`--end-frame-offset-m` 用默认 `0`（**不要**把 0.107 当成“超出法兰”，否则会多算 107mm）。`FLANGE_CONNECTOR_M=0.058` 与 `CLAMPED_LENGTH_M=0.05` 是常量，`fit_ribbon_full`/CLI/报告默认都取它们；`--clamped-length-m` **以 ribbon 端面中心（= 连接件/链末端）为起点**——现场“从法兰算起约 5cm”的实际口径就是从连接件起算，所以直接是 50mm，不需要再减 58mm。回归测试 `test_guard_chain_tip_is_flange_plus_connector` 会用冻结 guard 样本核对这两级偏移，链格式变了会报警。
++
++Nokov↔base 标定（2026-10-16，第二版：两个独立三点刚体）：独立小程序 `tools/world_base_calibrate.py`。**第一版用单个两点资产 `ribbon_mid` 失败**，原因是两点模板只有一条 linkage 约束，而两个端部 marker 跨在**柔性**带子两端——调平过程一拉紧/放松，两端间距就变（实测 1081.0 → 1000.3mm，压缩 7.5%），唯一的约束不满足，整个 set 解不出来，两颗 marker 退化成了未命名点（`source=other`）。现改为**两个三点刚体**（`TemplateType=0`，都含 `Marker1/2/3`、`Size=4` 对应 8mm 球）：**`ribbon_x1` 的 `Marker1` = 远端（静止端）**，**`ribbon_x0` 的 `Marker3` = 近端（法兰端）**。每个 set 内部三点互距恒定（同一夹具），所以 linkage 永远满足、且对整体平移不变——这是它比两点跨软带子稳的根本原因。默认参数就是这两个资产/名字，`--far-end-set/--far-end-marker/--near-end-set/--near-end-marker` 可覆盖；给 `--marker-set` 仍可回到"单一资产里按名字取两端"的旧口径（此时需同时给 `--far-end-marker/--near-end-marker`）。角色**一律按资产+marker 名判定，绝不按世界 x**：实测世界 x 次序与角色相反（`ribbon_x1/Marker1` 在 x 小端），程序把 `world_x_order` 只当事实报出来。录制只对这一次采集加 `--other-markers`（主线采集不受影响）。近端按此顺序取：① `ribbon_x0/Marker3`；② 显式 `--near-end-other-index N`；③ 自动从 `source=other` 的未命名点里挑"到远端距离最接近 `--nominal-length-m`"的那个，必须落在 `--end-distance-min-m/--end-distance-max-m` 窗口内、与次优候选拉开 5cm 以上，否则放弃并降级（绝不硬猜）；结果里如实记 `near_end_source`、`other_points_seen`、`other_fallback_rejected`。实测 `ribbon_x1/Marker1` 与 `ribbon_x0/Marker3` 相距 **1.0001 m**（与标称 1.0m 吻合，第一版的 1.081m 问题随之消失）。于是 `远端端面中心 = 远端 marker − 25mm·ẑ`，`法兰中心(世界) = 近端 marker − 25mm·ẑ − 58mm·â`，`â` 默认取**两端连线方向**（`--connector-axis ribbon`；两端各 25mm 的 z 偏置相减后抵消，所以两 marker 连线就是两端中心连线），也可切现场口径的沿世界 x（`--connector-axis world_x`），程序报出两者夹角与差异（实测 14.0° / 1.9mm）。旋转按现场确认取 `R=diag(-1,-1,1)`（x/y 相反、z 一致），平移 `t = 法兰中心(世界) − R·法兰中心(base)`。机器人侧**只读 franka 状态快照**：`法兰中心(base) = (O_T_EE·F_T_EE⁻¹)[:3,3]`（libfranka 的 16 元素数组是**列主序**、平移在末列；快照里两个矩阵都有，已用冻结 guard 链交叉验证到 1e-3 以内），因此**不需要 FK 链**，也就绕开了"调平时 `trajectory.csv.ribbon_guard` 还不存在"的问题。⚠️ 快照与动捕采集**必须同一静止姿态**，且快照默认限龄 15 分钟（超龄直接拒绝、降级），否则算出来的平移是错的——这也是它必须紧跟在调平之后跑的原因。结果持久化到 `tools/state/world_base.yaml`（含标定时间、输入快照/CSV、两端位置、间距、角色与来源、z/连接件偏置），`pipeline_videos.load_extrinsic` 可直接读。
+ **2026-10-16 第三版（当前默认）：端点与端部走向全部只从动捕来，不再经过 FK 与外参。** 起因是外参口径实测有系统性偏差：起始绷紧静止段"法兰 z（FK+外参）vs 带子实际走向"差 **12.9°**，而"带子自身直不直"只有 **1.9°** —— 说明偏在机器人/外参一侧。三重交叉验证（局部中轴切向、1m 两端连线、切线基线 1→35 点）都指向同一结论；换 x/y 轴更差（68°/74°），换基线长度无影响。进一步用 `ribbon_x0` 三点组自建坐标系测量：带子走向在该系里 **起始段散度仅 0.26–0.36°（p95 0.7°）**，说明法兰↔夹具↔带子之间存在一个**固定的安装/耦合角**；而这个角与"外参旋转假设的误差"在方向数据上**数学等价、无法分离**（两者复合成同一个固定旋转 `R·M`）。既然分离不了，就不去分离：`pipeline_videos.py` 的端点来源改为 **mode=markers（默认）**——两端面中心分别取 `ribbon_x0/Marker3`、`ribbon_x1/Marker1` 沿世界 z 减 25mm，端部走向在拟合时由"端面中心 → 观测段近端"的连线给出（`fit_ribbon_full(..., flange_axis=None)`，报告里 `end_axis_source=end_centre_to_observed`）。这样那 13° 与 44–55mm 位置残差**按构造消失**，整条重建变成纯动捕。实测对比同一 run（`20261016_235219_06e7f038`）：外参口径重建带长中位 **1.0403m**（p5–p95 0.982–1.046，超出 1m 不合理），纯动捕口径 **0.9858m**（0.956–1.0005，落在松弛↔绷紧的合理区间），宽度残差两者都是 ~0.6mm。新参数：`--end-mode {markers,extrinsic}`（默认 markers）、`--near-end-set/--near-end-marker`（默认 `ribbon_x0/Marker3`）、`--far-end-set/--far-end-marker`（默认 `ribbon_x1/Marker1`）、`--end-z-offset-m`（默认 0.025，两端共用）。`mode=extrinsic` 保留旧口径（近端走 FK+外参、需 `--world-base-extrinsic`）作为交叉验证；标记为 `flange_vs_observed_tangent_deg` 的那个量在 markers 口径下含义变为"端部 0–15cm 弦向 vs 观测局部切向"，即**端部弯曲度**，不再是外参误差指标。标定程序 `tools/world_base_calibrate.py` 与 `tools/state/world_base.yaml` 仍然保留，但**默认拟合不再依赖它们**。
+ 
+ **2026-10-17 更正：这 1m 内没有夹具影响。** ribbon 材料总长超过 1m，被夹具夹住后**暴露的自由段恰好 1m**，夹持段在这 1m 之外。所以 `CLAMPED_LENGTH_M` 由 0.05 改为 **0**（不再在自由段内强制 50mm 直线），`--clamped-length-m` 保留给"夹具确实夹进自由段"的场合。实测该项对结果**无实质影响**：`clamped=0.05` 与 `0.00` 在同批数据上弧长中位都是 0.9864m、宽度残差都是 0.63mm（因为端部走向本就取自数据，带子在那 50mm 里几乎就是直的）。同时新增**自由段长度约束**作为独立质量指标：材料不可伸长 ⇒ 重建弧长应恒等于 `--free-length-m`（默认 1.000m）。`fit_ribbon_full` 每帧报告 `free_length_error_mm = 弧长 − free_length_m`，渲染汇总给 `free_length_error_mm_median/_p5/_p95/_max_abs` 与 `free_length_quality`（`max|偏差| > 30mm` 判 warning，并写 `free_length_warning`）——**它不是运行失败，而是提示端部桥接模型不宜用于量化结论**。实测该 run：中位 **−13.7mm**、p5 −42.7 / p95 +0.5、最大 43.1mm → warning；而**观测段**（10 个 marker 首末之间的固定材料）弧长变化只有 **1.1%**，说明误差集中在两端各约 15cm 的样条桥接段，不是实测段。这个量不依赖机器人/外参，可直接当回归测试用。
+@@ -1497,13 +1673,28 @@
+ | 读到 | 处理 |
+ |---|---|
+ | 两个都在 | 重新标定并**更新** `tools/state/world_base.yaml` |
+-| **只有远端 `x1`** | 正常降级：**不覆盖**，沿用上次保存的 `T_world_base`，`result.json` 里记 `warning` |
+-| **只有近端 `x0`** | **直接中断**：抛 `PipelineError("WORLD_BASE_CALIBRATION_BLOCKED")`，不落盘。远端参考缺失时端点约束重建不成立，硬跑没有意义 |
++| **只有远端 `x0`** | 正常降级：**不覆盖**，沿用上次保存的 `T_world_base`，`result.json` 里记 `warning` |
++| **只有近端 `x1`** | **直接中断**：抛 `PipelineError("WORLD_BASE_CALIBRATION_BLOCKED")`，不落盘。远端参考缺失时端点约束重建不成立，硬跑没有意义 |
+ | 一个都没读到 | 非致命：沿用上次结果 + `warning`（不中断，保持和旧行为一致） |
+ 
+-marker 角色用**名字**判定，可用 `--far-end-marker`（默认 `x1`）/`--near-end-marker`（默认 `x0`）改；两个都在时若"x 最大的那个"不是配置的远端名，会在结果里给 `name_order_warning`，提示带子方向或命名与约定不符、8mm 连接件的方向假设可能反了。任何非中断的异常都只降级不抛出，**不打断规划与执行**。标定录制落在 `<run>/world_base_calibration/` 子目录，日志 `<run>/world_base_calibration.log`（渲染端的“只有一个 marker CSV”兜底 glob 会排除含 `world_base` 的文件名）。`pipeline_videos.py` 现在默认用这份保存的外参（没显式给 `--world-base-extrinsic` 时），并把远端来源默认改为 `--ribbon-end-set ribbon_mid --ribbon-end-pick-x max`；`--ribbon-end-pick-x` 可按世界 x 选 max/min，`read_end_point` 在 `pick_x=None` 时对一帧内出现多个匹配行视为歧义并跳过。
+-
+-两个如实记录的近似：① 连接件的 8mm 是**沿世界 x** 减的（现场口径），真正方向应沿 ribbon 长轴，程序会报出 `ribbon_axis_vs_world_x_deg` 与由此产生的 `connector_axis_approximation_mm`；② 单点法只有一个点，无法独立验证旋转，所以务必看渲染输出的 `flange_vs_observed_tangent_deg`（应接近 0）和 `ribbon_length_m`（应接近 1.0m）作为交叉检查。相机、机器人底座、端部 marker 支架任一被移动过，都必须重标。
++marker 角色用**资产 + 名字**判定，可用 `--far-end-set/--far-end-marker`（默认 `x0/Marker3`）与 `--near-end-set/--near-end-marker`（默认 `x1/Marker2`）改（2026-10-22 资产改名后的默认值，来历见 18.1 之前的 2026-10-23 段）；两个都在时若"x 最大的那个"不是配置的远端名，会在结果里给 `name_order_warning`，提示带子方向或命名与约定不符、58 mm 连接件的方向假设可能反了。任何非中断的异常都只降级不抛出，**不打断规划与执行**。标定录制落在 `<run>/world_base_calibration/` 子目录，日志 `<run>/world_base_calibration.log`（渲染端的“只有一个 marker CSV”兜底 glob 会排除含 `world_base` 的文件名）。`pipeline_videos.py` 只在 `--end-mode extrinsic` 时用这份保存的外参（默认 `markers`，见上条）；旧资产 `ribbon_mid` 与 `--ribbon-end-set` 参数已移除，`--ribbon-end-pick-x` 仍可按世界 x 从同一资产里挑 max/min，`read_end_point` 在 `pick_x=None` 时对一帧内出现多个匹配行视为歧义并跳过。
++
++两个如实记录的近似：① 连接件的 58 mm 是**沿世界 x** 减的（现场口径），真正方向应沿 ribbon 长轴，程序会报出 `ribbon_axis_vs_world_x_deg` 与由此产生的 `connector_axis_approximation_mm`；② 单点法只有一个点，无法独立验证旋转，所以务必看渲染输出的 `flange_vs_observed_tangent_deg`（应接近 0）和 `ribbon_length_m`（应接近 1.0m）作为交叉检查。相机、机器人底座、端部 marker 支架任一被移动过，都必须重标。
++
++**2026-10-23 端点口径（当前默认）：`x1/Marker2` + `x0/Marker3`，端板法向偏移。** 资产改名后，带身仍由
++`ribbon_1021`（12 点）观测，两端改由**端板刚体**锚定：机械臂端 `x1/Marker2`、固定端 `x0/Marker3`，两者都在
++带子中心线正上方（高 27.2 / 29.3 mm，横向 1.6 / 1.1 mm），所以 `--end-z-offset-m` 默认 0.028。
++`read_end_point` 新增 `--end-offset-mode plate_normal`（默认）——每帧把该资产的全部 marker 与首帧参考位形做
++Kabsch 刚体拟合，把 `[0, 0, −z]` 偏移按端板姿态旋转后再叠加，纠正旧口径在带子绕长轴转 180° 后偏 2×z 的
++系统误差；缺任一板点或残差 >5 mm 时该帧退回 `world_z`，两种帧数分别记在
++`end_constraints.near_end_offset.plate_normal_frames` 与 `.plate_world_z_fallback_frames`，不伪造。
++`--end-offset-mode world_z` 保留给旧数据。端板可解性已验证：`x1` 四点 24 种排列的最小残差 28.4 mm
++（旧三点几何 10.1 mm），任何会挪动 `Marker2` 的排列残差 ≥28.4 mm、位置错 40–113 mm，端点稳。
++`world_base_calibrate` 的默认同步为 `--near-end-set x1 --near-end-marker Marker2` 与
++`--far-end-set x0 --far-end-marker Marker3`；`tools/state/world_base.yaml` 仍是 8 mm 时代那份
++（`connector_m: 0.008`，记录里是 `ribbon_x0` / `ribbon_x1` 旧名），下一次标定才按新名与新连接件改写。
++**未做**：端点扭转插值（把外推段的 director 从未实测段单调过渡到端板滚转），需要一次带完整 180° 扭转的
++完整采集才能验证。见 15.6、18.1、18.2。
+ 
+ #### 18.1 远程 GUI 与默认录像
+ 
+@@ -1540,29 +1731,211 @@
+ | 保存姿态归位、微动、保存 CSV 校验/执行 | franka_home_pose / franka_cartesian_delta_move / franka_execute_offline |
+ | 完整路径（从结构化参数生成规格） | prepare_robot_pipeline_spec → robot_pipeline_submit → robot_pipeline_start |
+ | 完整路径（按 r9000p 上已有任务 YAML） | robot_pipeline_list_tasks → prepare_robot_pipeline_remote_task → robot_pipeline_submit → robot_pipeline_start |
++| 查看可复用的 plan/prepare 运行 | robot_pipeline_list_runs |
++| 从已有 plan/prepare 生成 prepare/execute 复用规格 | prepare_robot_pipeline_from_run → robot_pipeline_submit → robot_pipeline_start |
++| 向运行中的提示发送精确答案 | robot_pipeline_confirm |
+ | 状态、日志、成果、哈希取回 | robot_pipeline_status / robot_pipeline_logs / robot_pipeline_artifacts / robot_pipeline_fetch_result |
++| 队列状态（只读） | robot_pipeline_queue_status |
++| 暂停/恢复自动启动 | robot_pipeline_queue_pause / robot_pipeline_queue_resume |
++| 补认某个排队任务 | robot_pipeline_acknowledge |
++| 调整排队顺序 | robot_pipeline_reorder |
+ | 终态任务视频查询/补录（显式生成两个 ribbon MP4） | robot_pipeline_render_videos |
+ 
+-**两条输入路径不能混用。** `prepare_robot_pipeline_spec` 从结构化参数生成任务规格；`prepare_robot_pipeline_remote_task` 按路径读取 r9000p 上已有的任务 YAML。任务已经是文件时用后者，不要用前者把同一任务重新描述一遍（容易漏字段或改掉语义）。两条路径最终都经 `robot_pipeline_submit` 登记为同一种不可变任务，再 `robot_pipeline_start` 显式启动；启动仍受运动总开关与串行锁约束，真机 MOVE 仍由现场 attach 终端确认。
++**2026-10-22 操作者放行不经 extension 工具。** 队列的 `approved` 只能由现场操作者在本机看板或 r9000p 上
++执行 `robot_job approve --id <id>` 写入；extension 没有 `robot_pipeline_approve`，远端（pro6000）既不能
++代为放行，也不能用提交参数预置放行。`robot_pipeline_acknowledge` 仍只写标定运动确认，默认配置下已不足以让
++任务自动启动；`robot_pipeline_queue_status` 如实返回每项的 `approved` 与 `eligible`。
++
++**启真平台 Adapter 2.3.11 源码同步（2026-10-23）。** `adapter.json` 的显式起点标识改为
++`flange_58mm_v3`，宽面对齐说明改为法兰外 58 mm；不手工改写旧起点或复用旧安装 CSV/guard。
++`src/core.py` 的 `franka.nokov.monitor` / `franka.nokov.record` 固定选择 `--plane ribbon_1021`，
++`franka.shape.extract` 只提取 `source=markerset`、`set_name=ribbon_1021` 的有效点，回执也使用新名；
++旧 `ribbon` 数据与端板 `x0` / `x1` 不会混入带身单帧点列。pipeline 主路径仍按现场
++`ribbon_params.yaml` 取资产名；端点锚定与 `plate_normal` 偏移由原生后处理负责。
++`franka.manual.read` 读取随该版本发布的 `docs/RIBBON.md` 副本及其 SHA-256，不实时读取主手册。
++相关测试与随包手册一同更新，已完成 AMD64/ARM64 无硬件回归、真实 YAML 解析补测及
++Connector/handler/broker 替身烟测；源码更新和生成包不代表安装或生效，本次未切换已安装版本、
++未重启 broker、未同步平台能力、未连接或驱动设备。
++网关队列及 extension 工具与本 Adapter 是不同入口；本 Adapter 不新增 `approve` 或检查点复用操作。
++
++**三条输入路径不能混用。** `prepare_robot_pipeline_spec` 从结构化参数生成任务规格；`prepare_robot_pipeline_remote_task` 按路径读取 r9000p 上已有的任务 YAML；已有 `plan`/`prepare` 运行用 `prepare_robot_pipeline_from_run`。任务已经是文件时不要用结构化入口重新描述（容易漏字段或改掉语义），已有运行也不要重新提交 task YAML。三条路径最终都经 `robot_pipeline_submit` 登记为同一种不可变任务，再 `robot_pipeline_start` 显式启动；启动仍受运动总开关与串行锁约束，MOVE 提示需用户明确确认，可通过 `robot_pipeline_confirm` 远程发送或 attach 输入。
++
++**复用已有 run 的边界（2026-10-19）。** `robot_pipeline_list_runs` 只读列出 `pipeline_runs` 根或其某个子目录的**当层**运行（不递归），返回 `run_id`、`mode`、`status`、`level` 与可用阶段；清单本身不做全量校验，列出不代表可以复用。`prepare_robot_pipeline_from_run` 接受 `mode=prepare` 或 `mode=execute`，先通过网关 `read_run` 重新校验并哈希源运行的 task/trajectory/guard/result/checkpoint，再把源信息写进新的不可变 `ribbon_hardware_pipeline_resume` 规格；它不接收 task YAML，不复制或改写源运行目录。`robot_pipeline_submit` 对复用规格调用网关 `submit_resume`，只登记普通排队任务，不启动；execute 复用同样进入队列，不需要先单独跑 prepare 步骤。worker 启动前会再次核对源运行复合哈希，源在排队期间被改动则拒绝启动。起点校验仍会执行；`HOME`/`RELEVEL`/`QUIT` 和最终 `MOVE` 由 `robot_pipeline_confirm` 远程发送当前提示列出的精确答案，或由 attach 终端输入，不再要求现场人员。
+ 
+ **远端 YAML 入口的边界（2026-10-22）。** 任务根是 `~/ribbon_ws/trajectories`（网关 `tasks_root`；2026-10-22 前是 `~/ribbon_ws/pipeline/trajectories`）。`robot_pipeline_list_tasks` 列出该根或其中某个子目录当层的 `.yaml/.yml`（不递归；根层传 `.`，空串会被拒绝），返回每个文件的 `task_path`、`bytes`、`sha256`；单文件限 1–2 MiB，每目录最多 200 个，清单本身带 `scientific_evidence: false`，列出文件不代表任务通过校验或可以执行。`prepare_robot_pipeline_remote_task` 用 `task_path` 读取该文件的原始字节并计算 SHA256，只接受任务 YAML（顶层必须是 mapping）；`start_state_file` 只允许指向共享的 `/home/zhaoyunzyq/ribbon_ws/ros/src/franka_motion_planner/config/franka_start_pose.yaml`，网关会按该路径读取这份快照并提供其哈希，指向其它路径会被拒绝。相对路径按 `tasks_root` 解析；绝对路径与符号链接也必须落在该根内，`pipeline/docs/`、`pipeline/tools/` 或 r9000p 上其它目录的文件不能走这个入口，需要先把任务放进 `~/ribbon_ws/trajectories/`（子目录可以，`task_path` 用清单返回的绝对路径）。该工具只读取并准备任务内容，不登记、不启动、不运动、不改写原 YAML；登记由 `robot_pipeline_submit` 完成。除共享起点外，任务引用的其它文件不会被打包，请用绝对路径并自行确认存在。
+ 
+-运动 API 先登记精确任务；tool-agent/tool-chat 在用户明确要求执行后直接调用 robot_pipeline_start，无需 /authorize 或额外独立授权记录。MOVE 仍在现场 attach 终端确认，模型没有输入确认的工具。非运动 API 可自动登记启动，但 FCI 读取仍需独占，测量可能更新会话。已有 tool-chat 窗口需重启一次加载新工具；手册读取每次返回远端当前内容，不依赖本地副本。
+-
+-2026-10-18 pro6000 交互入口权限更新：按用户要求取消 tool-agent/tool-chat 的额外 /authorize 门槛。启动仍通过原 extensions → Python → 任务网关链路，保留不可变任务输入校验、运动总开关、串行锁和原生现场 MOVE；正式科研的 Reviewer 与现场授权合同不变。历史授权记录保留为审计；需重启已有交互窗口加载更新，本次变更不启动任何设备。
++运动 API 先登记精确任务；tool-agent/tool-chat 在用户明确要求执行后直接调用 robot_pipeline_start，无需 /authorize 或额外独立授权记录。MOVE/HOME/RELEVEL/QUIT 提示由用户明确选择后，通过 robot_pipeline_confirm 发送当前 pending_confirmation 列出的精确答案；该工具不能发送任意按键，也不判断现场是否安全。非运动 API 可自动登记启动，但 FCI 读取仍需独占，测量可能更新会话。已有 tool-chat 窗口需重启一次加载新工具；手册读取每次返回远端当前内容，不依赖本地副本。
++
++2026-10-18 pro6000 交互入口权限更新：按用户要求取消 tool-agent/tool-chat 的额外 /authorize 门槛。启动仍通过原 extensions → Python → 任务网关链路，保留不可变任务输入校验、运动总开关、串行锁和原生 MOVE 提示；正式科研的 Reviewer 与现场授权合同不变。历史授权记录保留为审计；需重启已有交互窗口加载更新，本次变更不启动任何设备。
+ 
+ 2026-10-18 修正记录（18.2 映射表）：此前本节只写 `prepare_robot_pipeline_spec → robot_pipeline_submit → robot_pipeline_start`，未列 `robot_pipeline_list_tasks` / `prepare_robot_pipeline_remote_task`，读到“按 YAML 路径执行”会误以为托管工具没有入口。两个工具已在 extension 注册，分别对应网关 2026-10-18 新增的 `list_tasks` / `read_task` 通道；已有 tool-chat 窗口需重启一次加载。本次修改只涉及文档，不登记、不启动、不连接任何设备。
+ 
+-
+-## Adapter 2.3.7 会话失败状态
+-
+-可能涉及真机运动的会话失败后，未确认停稳记 unknown 并保留控制锁；机械臂仍在运动、
+-状态读取失败或核验超时均不能解锁。session.status 只读核验通过后转 failed 并释放锁，
+-不重放任务。明确没有启动运动的离线失败直接 failed，stop_verification.required=false。
+-Broker 普通重启不清除 unknown；操作员旧声明不能替代本次核验。
+-Adapter 2.3.8 保留人工例外：显式运行 scripts/broker_control.py --force-stop，停止 Broker、
+-备份并移除阻塞会话、释放软件锁，不核验或发送机械臂停止指令，不自动重启。
+-旧请求 ID 保留归档回执，不重新执行；归档会话只从备份查询，产物和已完成会话保留。
+-update.sh/stop_broker.sh 使用此强制入口；普通重启不使用该例外。
+-Agent 对 unknown 只查询/诊断；对 failed 判断失败原因、已完成动作、实际起点和原目标，
+-满足原授权/确认/保护要求时最多恢复一次。不得盲目重复相对位移，传输失败只恢复传输。
++2026-10-19 复用入口更新（同日二次）：网关新增 `list_runs`（只读当层列表）、`read_run`（全量校验并返回复合哈希）、`submit_resume`（`mode=prepare|execute`）与 `send_input`（仅发送当前提示的精确 choice）；pro6000 对应新增 `robot_pipeline_list_runs`、`prepare_robot_pipeline_from_run`、`robot_pipeline_confirm`，并把 `ribbon_hardware_pipeline_resume` 纳入可审批协议。复用规格仍走原 `robot_pipeline_submit`/`robot_pipeline_start`；execute 复用进入队列，运行中的提示可远程确认。已有 tool-chat/tool-agent 窗口需重启一次加载新工具；本次修改不登记、不启动、不连接设备。
++
++**队列工具已封装（2026-10-19 晚）。** `robot_pipeline_submit` 增加可选 `priority`（-1000..1000，高者先，默认 0，只影响排队顺序）；`robot_pipeline_acknowledge` 为某个已登记的 `queued` 任务写入标定运动确认，使其在网关 `auto_start` 开启时可能被队列自动启动。该工具只在宿主手动 tool-chat/tool-agent 上下文可用，正式科研角色仍走 Reviewer 批准 + `robot_pipeline_start`；它不启动任务、不回答任何 pipeline 提示、不证明停稳。`robot_pipeline_confirm` 则在用户明确选择后发送当前提示的精确 choice，不自动代答。`robot_pipeline_queue_pause` / `_resume` 只切换队列的“是否启动新任务”，运行中的任务、其终端与所有人机提示不受影响，也不是急停。`robot_pipeline_queue_status` 只读，返回 `auto_start`、`paused`、当前活动任务、`blocked_by_review` 与按优先级排序的 `queued` 列表（含 `priority`、`acknowledged`、`approved`、`eligible`）。2026-10-22 起新增操作者放行：新任务默认不会自动执行，必须由人在本机队列看板或 `robot_job approve --id <id>` 显式确认后才会进入自动派发。工具源码与 `tool-catalog.json`、`config/tools.yaml` 角色白名单同步更新；已打开的 tool-chat/tool-agent 窗口需重启一次才加载新工具。
++
++#### 18.3 任务队列与自动调度（2026-10-19）
++
++`~/ribbon_ws/robot_gateway` 是 SSH 任务管理层。2026-10-19 起它同时承担
++**多任务排序 + 单实例自动派发**：远端可以在任意时间、以任意间隔提交任意多个任务，
++网关按队列顺序逐个启动，一次只跑一个。调度器只负责 `queued → starting` 这一步，
++不代替人工决策；运行中的 MOVE/HOME/RELEVEL/QUIT 由用户明确选择后经
++`robot_pipeline_confirm` 远程发送，或由 attach 输入。`submit_resume` 产生的
++prepare/execute 复用任务都是普通 `queued` 任务，同样受 `auto_start`、暂停标志、
++`approved`（以及配置开启时的 `acknowledged`）与串行锁约束。
++
++- 程序：`/home/zhaoyunzyq/ribbon_ws/robot_gateway/robot_job.py`，命令包装 `/home/zhaoyunzyq/.local/bin/robot_job`
++- 服务：`zd-robot-gateway-queue.service`（`systemctl status|start|stop zd-robot-gateway-queue.service`）
++- 状态目录：`/home/zhaoyunzyq/ribbon_ws/Output/`（`jobs.sqlite`、`jobs/`、`config.json`、
++  `worker.lock`、`queue.paused`、`execution.lock`、`tmux.sock`）
++- 调度日志：`journalctl -u zd-robot-gateway-queue.service -f`，每行一个 JSON
++  （`worker_started`、`started`、`wait`、`idle`、`disabled`、`paused`、`blocked`、
++  `blocked_needs_review`、`confirmation_timeout_cancel`、`error`；同一 `action`+`job` 连续重复只记一次）
++
++**排序。** `priority` 越大越先（整数 −1000..1000，默认 0）；同优先级按 `created`
++先提交先执行。`priority` 只在 `queued` 阶段可改（`robot_job reorder`），
++已开始的任务不受影响。`queue_position` 是当前排队位次（1 = 下一个被考虑的任务）。
++
++**自动启动条件（必须全部满足）。**
++
++1. `config.json` 的 `auto_start` 为 `true`（默认 `false`，需管理员显式开启）。
++2. `queue.paused` 标志文件不存在。
++3. 没有 `starting/running/cancelling/needs_review` 任务。`needs_review` **阻塞整个队列**，
++   必须检查（可远程查看状态、日志与录像）后执行
++   `robot_job resolve --id <id> --acknowledge-site-check --note "..."` 才解除。
++4. 该任务 `approved = 1`。**新提交的任务一律 `approved = 0`，调度器永远跳过**；
++   只能由现场操作者显式放行：本机看板 <http://127.0.0.1:8770/> 排队卡片上的
++   「确认执行」，或 `robot_job approve --id <id>`（SSH JSON `approve`）。
++   提交参数不能预置放行；`approve` 只接受 `queued`，同时写入 `acknowledged = 1`。
++5. 默认 `require_submit_ack: true` 时还要求 `acknowledged = 1`。`approve` 会一并写入；
++   单独 `robot_job acknowledge`（提交时加 `--acknowledge-calibration-motion`）只记录
++   “标定阶段也可能运动”的知情确认，**不再足以让任务自动启动**。
++6. 启动前重新校验任务输入、`run_pipeline.py` 与设备配置的哈希；任一变化则该任务
++   `failed`，不自动重试。校验和原 `start` 完全共用同一代码路径。
++
++**状态流。** `queued → starting → running → succeeded|failed|cancelled`；
++会话丢失、启动握手超时或执行锁不可用会退化为 `needs_review`（不自动重试）。
++`awaiting_confirmation` 表示“在等确认”：可 attach 到 tmux 输入，也可用
++`robot_pipeline_confirm` 发送当前 `pending_confirmation.choices` 中的精确答案。
++它不改变任何权限，也不影响 `needs_review` 的阻塞语义。
++
++**配置字段**（管理员文件 `~/ribbon_ws/Output/config.json`，未知字段会被拒绝）：
++
++| 字段 | 默认 | 说明 |
++|---|---|---|
++| `auto_start` | `false` | 是否允许调度器自动启动已确认的排队任务 |
++| `require_submit_ack` | `true` | 无 `acknowledged` 的任务一律不自动启动 |
++| `require_operator_approval` | `true` | 无 `approved` 的任务一律不自动启动；提交无法预置，只能人工放行 |
++| `poll_interval_seconds` | `2.0` | 轮询间隔，0.1–60 |
++| `confirmation_timeout_seconds` | `0` | `0` = 无限等待人工输入；正数（≤86400）只在 `awaiting_confirmation` 超过该秒数后发 SIGTERM 取消，**绝不代答** |
++| `runs_root` | `<workspace>/pipeline_runs` | 可复用 plan/prepare 运行的根；`list_runs` / `read_run` / `submit_resume` 的边界 |
++| `tasks_root` | `<workspace>/../trajectories` | 任务 YAML 根（2026-10-22 起为 `~/ribbon_ws/trajectories`）；`list_tasks` / `read_task` 的边界，`health` 会返回 |
++
++当前生产配置为 `auto_start: true`、`require_submit_ack: true`、
++`poll_interval_seconds: 2.0`、`confirmation_timeout_seconds: 0`；服务已
++`enable --now`，日志只有 `worker_started` / `idle`，没有启动任何任务。
++
++**远端操作**（`--id`/`job_id` 均为任务 uuid，不是 `request_id`）。
++
++| 目的 | CLI | SSH JSON（原有 forced-command key） |
++|---|---|---|
++| 查看队列 | `robot_job queue --action status` | `{"operation":"queue_status"}` |
++| 暂停派发 | `robot_job queue --action pause` | `{"operation":"queue_pause"}` |
++| 恢复派发 | `robot_job queue --action resume` | `{"operation":"queue_resume"}` |
++| 补认一个排队任务 | `robot_job acknowledge --id <id>` | `{"operation":"acknowledge","job_id":"<id>"}` |
++| 放行一个排队任务（唯一自动派发入口） | `robot_job approve --id <id>` | `{"operation":"approve","job_id":"<id>"}` |
++| 改排队优先级 | `robot_job reorder --id <id> --priority 5` | `{"operation":"reorder","job_id":"<id>","priority":5}` |
++| 提交（可自动启动） | `robot_job submit --request-id <rid> --task <path> --mode prepare --priority 5 --acknowledge-calibration-motion` | `submit` 带 `task_b64`、`priority`、`acknowledge_calibration_motion` |
++| 手动启动（旧路径，绕过放行） | `robot_job start --id <id> --acknowledge-calibration-motion` | `{"operation":"start","job_id":"<id>","acknowledge_calibration_motion":true}` |
++| 远程确认当前提示 | `robot_job confirm --id <id> --answer MOVE --phase <phase>` | `{"operation":"send_input","job_id":"<id>","answer":"MOVE","expected_phase":"<phase>"}` |
++| 人工 attach（可选） | `ssh -t r9000p '... robot_job attach --id <id>'` | — |
++| 取消 | `robot_job cancel --id <id>` | `{"operation":"cancel","job_id":"<id>"}` |
++
++**本机队列看板（2026-10-20 新增，2026-10-22 加放行）。** `robot_gateway/queue_dashboard.py` +
++`queue_dashboard.html`，用户服务 `zd-robot-gateway-dashboard.service`，地址
++<http://127.0.0.1:8770/>（只监听 127.0.0.1）。快照只读（`jobs.sqlite` 以 `mode=ro` 打开）；写操作只有三个、
++都只对 `queued` 任务生效、且都委托 `robot_job`：`确认执行`（= `approve`）、`↑` / `↓`（= `reorder`）、
++`删除`（= `remove`）。以 `--read-only` 启动时禁用全部写控件。看板不替调度器做决定、不回答问题提示、
++不证明停稳，也不是急停。
++
++`queue_status` 返回 `auto_start`、`require_submit_ack`、`require_operator_approval`、
++`paused`、`confirmation_timeout_seconds`、`active`、`blocked_by_review`、`queued`
++（每项含 `position`、`id`、`request_id`、`mode`、`priority`、`acknowledged`、
++`approved`、`age_seconds`、`eligible`）以及恒为 `false` 的 `hardware_stop_verified`。
++`health` 也返回 `auto_start`、`require_operator_approval`、`queue_paused`、`runs_root` 与 `tasks_root`。`acknowledge`/`approve`/`reorder`
++只接受 `queued` 状态；已开始的任务用 `confirm` 回答当前提示，或用 `attach`/`cancel`。
++
++SSH JSON 提交示例（其余字段同原协议）：
++
++```json
++{"operation":"submit","request_id":"exp_0042","mode":"prepare",
++ "task_b64":"<base64 任务 YAML>","priority":5,
++ "acknowledge_calibration_motion":true}
++```
++
++**远程确认与 attach 并存。** 每个任务仍在自己的 tmux 会话中运行；`status` 返回的
++`pending_confirmation` 包含当前 `phase`、`prompt`、`choices`，用户明确选择后由
++`robot_pipeline_confirm` 发送其中一个精确 choice。网关拒绝未列出的答案、阶段不匹配和
++没有活动提示的输入；它不自动确认、不重试、不 `resolve`，也不修改任务输入。
++调度器仍只负责“按序把 `queued` 变成 `starting`”；是否执行某一步仍由用户决定。
++
++**部署与回滚。** 服务单元已随代码放在网关目录：
++
++```bash
++sudo install -m 0644 /home/zhaoyunzyq/ribbon_ws/robot_gateway/zd-robot-gateway-queue.service \
++  /etc/systemd/system/zd-robot-gateway-queue.service
++sudo systemctl daemon-reload
++sudo systemctl enable --now zd-robot-gateway-queue.service
++```
++
++回滚：`sudo systemctl disable --now zd-robot-gateway-queue.service`，再恢复
++`robot_job.py` / `ssh_endpoint.py` 的上一版本；数据库新增的 `priority`、
++`acknowledged`、`approved` 三列对旧代码无影响。部署前备份在
++`~/qizhen-franka-staging/backups/robot_gateway_before_queue_20261019_201410`，
++详细部署记录见 `~/ribbon_ws/robot_gateway/DEPLOYMENT.md`，网关自身说明见同目录 `README.md`。
++
++**失败码与处置。**
++
++| 错误 | 含义 |
++|---|---|
++| `GATEWAY_BUSY: a managed pipeline owns the execution lock` | 另一个进程持有 `execution.lock`；先 `list`/`status` 查清 |
++| `GATEWAY_BUSY_OR_REVIEW_REQUIRED: inspect existing job <id>` | 有活动任务或 `needs_review`；后者必须人工 `resolve` |
++| `QUEUE_WORKER_ALREADY_RUNNING` | 同一状态目录已有调度器（`worker.lock`），不要重复启动 |
++| `REQUEST_CONFLICT: same request-id has different input/configuration` | 同 `request_id` 内容不同；换 id 或原样重提 |
++| `Input changed after submission` / `Pipeline or device configuration changed after submission` | 启动前哈希校验失败；重新提交 |
++| `Only queued jobs can be acknowledged/approved/reordered` | 任务已开始或已终态；改用 `confirm`/`attach`/`cancel` |
++| `NO_PENDING_CONFIRMATION` | 当前没有活动提示；先 `status` 查看 `pending_confirmation` |
++| `PHASE_MISMATCH` | `expected_phase` 与当前提示阶段不一致；重新查询后再答 |
++| `ANSWER_NOT_ALLOWED` | 答案不在当前 `pending_confirmation.choices` 中；网关拒绝任意按键 |
++| `JOB_SESSION_MISSING` | 任务记录为活动但 tmux 会话已丢失；检查日志并 `resolve`/`cancel` |
++
++**安全边界与已知限制。**
++
++- `hardware_stop_verified` 恒为 `false`。`pause`、`cancel`、`systemctl stop` 都**不是**
++  物理急停或停稳证明；真实安全仍靠现场与硬件急停。
++- `pause` / `systemctl stop` 只阻止**新**任务；正在 tmux 中运行的 pipeline 不受影响，
++  需要 `cancel`（SIGTERM 清理）或现场急停。
++- 队列不并发、不重试、不自动恢复 `needs_review`；异常一律停在终态或 `needs_review`。
++- 迁移前遗留的 `queued` 任务 `acknowledged = 0`、`approved = 0`，不会被自动启动。
++  当前两条遗留任务 `pi_pilot_E1A_D060_20261018`、
++  `pi_base_z10_x_steps_rotations_v2_20261013` 保持未确认、未放行，需要时人工 `approve`
++  （放行并同时记录确认）或 `cancel`。
++- pro6000 的 extension 已封装队列操作（2026-10-19 晚）：`robot_pipeline_queue_status`、
++  `robot_pipeline_queue_pause` / `_resume`、`robot_pipeline_acknowledge`、`robot_pipeline_reorder`，
++  且 `robot_pipeline_submit` 可带 `priority`。`robot_pipeline_submit` 默认仍不写
++  `acknowledged`，所以即使 `auto_start=true` 也不会自动开始；要自动排队须在手动控制台显式
++  `robot_pipeline_acknowledge`（仅 `queued` 任务，仅手动上下文）。两条遗留任务仍保持未确认。
++  已打开的 tool-chat/tool-agent 窗口需重启一次加载；重启与工具调用都**不**启动任何设备。
++  2026-10-22 起放行只能由现场操作者在本机看板或 `robot_job approve` 完成，extension 不提供
++  `robot_pipeline_approve`；`robot_pipeline_acknowledge` 只写知情确认，不再足以自动启动。
++- 同一账号可用不同 `--root` 启动第二个网关，会绕过跨进程 `execution.lock` 造成并发执行；
++  不要在生产状态目录之外另起实例。
++- 本功能不改变 pipeline 的调平、采集、仿真与视频行为，也不新增运动期间 Nokov 或 ATI 采集。
++
++**验证。** 生产目录 `python3 -m unittest discover -s tests -v` 共 44 项：41 通过，3 项 resume 相关既有失败
++（`test_gateway.test_resume_prepare_and_execute_use_from_run_argv`、`test_queue.test_resume_spec_without_inputs_reaches_launch`、
++`test_ssh_endpoint.test_resume_rpc_accepts_prepare_and_execute_and_rejects_bad_fields`；都是 `submit_resume`
++参数/mock 签名与代码不一致，2026-10-22 12:39 之前即存在，与本次改动无关）。覆盖队列派发、操作者放行、
++远程精确确认、execute/prepare 复用、RPC 白名单与旧边界回归；全部使用 `/tmp` 独立状态目录与纯 Python 模拟
++pipeline，不导入 ROS、libfranka 或 Nokov，也不连接设备。
++
+--- before/src/core.py
++++ after/src/core.py
+@@ -19,6 +19,7 @@
+ PACKAGE = Path(__file__).resolve().parent
+ MANIFEST = json.loads((PACKAGE / "adapter.json").read_text())
+ OPERATIONS = {v["operation_id"]: v for v in MANIFEST["operations"]}
++RIBBON_MARKER_SET = "ribbon_1021"
+ FCI = {
+     "franka.state.read",
+     "franka.delta.preview",
+@@ -298,7 +299,7 @@
+     frames = {}
+     with p.open(newline="") as f:
+         for r in csv.DictReader(f):
+-            if r["source"] != "markerset" or r["set_name"] != "ribbon":
++            if r["source"] != "markerset" or r["set_name"] != RIBBON_MARKER_SET:
+                 continue
+             key = int(r["wall_unix_ns"]), int(r["frame"])
+             frame = frames.setdefault(key, {"wall_iso": r["wall_iso"], "points": []})
+@@ -311,7 +312,7 @@
+     k = max(valid)
+     v = frames[k]
+     result = {
+-        "set_name": "ribbon",
++        "set_name": RIBBON_MARKER_SET,
+         "frame": k[1],
+         "wall_unix_ns": k[0],
+         **v,
+@@ -396,7 +397,7 @@
+             config["nokov_server"],
+         ]
+         if mode != "list":
+-            v += ["--plane", "ribbon", "--up-axis", "z"]
++            v += ["--plane", RIBBON_MARKER_SET, "--up-axis", "z"]
+         if mode == "record":
+             v += [
+                 "--duration",
+--- before/tests/TESTING.md
++++ after/tests/TESTING.md
+@@ -37,3 +37,13 @@
+ 本版新增回归：pipeline 拒绝检查点复用参数；同一任务的两个新会话各自启动厂商流程、
+ 生成独立轨迹和仿真视频；相同 request_id 重试不重复启动。源录像已经存在时补录仍重新生成，
+ 源输入和回执保持原样；本次生成失败返回 unavailable，不返回旧录像。
++
++## 2.3.11 定向回归
++
++- 显式起点使用 flange_58mm_v3 时原样保存；缺失、flange_8mm_v2 和其它无效标识在创建前拒绝。
++- Nokov monitor/record 传 ribbon_1021，list 不增加 plane 参数。
++- 形状提取只读取 ribbon_1021 的有效带身点，不混入旧资产、端板或 rigidbody 数据；
++  不足两点时回退到最后有效帧，只有旧资产的输入明确失败，不自动改名。
++- 随包手册包含 2026-10-23 更新，仍与现场手册路径隔离，保留分页与 SHA-256 检查。
++
++这些检查使用临时输入及厂商替身，不验证真实装夹、标定或运动。
+--- before/tests/test_adapter.py
++++ after/tests/test_adapter.py
+@@ -767,21 +767,55 @@
+         pose = {"joint_positions": [0] * 7}
+         with self.assertRaises(__import__("jsonschema").ValidationError):
+             validate("franka.task.create", {"request_id": "old", "task": {"waypoints": [{"motion": "free", "position": [0, 0, 0]}], "start_state": pose}})
+-        pose["ribbon_mount"] = "flange_8mm_v2"
+-        validate("franka.task.create", {"request_id": "new", "task": {"waypoints": [{"motion": "free", "position": [0, 0, 0]}], "start_state": pose}})
++        for mount in ("flange_8mm_v2", "flange_58mm_v2", "unknown"):
++            with self.subTest(mount=mount), self.assertRaises(__import__("jsonschema").ValidationError):
++                self.call("task.create", task={"waypoints": [{"motion": "linear", "position": [0, 0, 0]}],
++                                              "start_state": {**pose, "ribbon_mount": mount}})
++        pose["ribbon_mount"] = "flange_58mm_v3"
++        task = {"waypoints": [{"motion": "linear", "position": [0, 0, 0]}], "start_state": pose}
++        saved = self.call("task.create", task=task)
++        self.assertEqual(json.loads(self.b.store.task(saved["task_id"]).read_text())["start_state"], pose)
++        self.assertEqual(len(self.b.store.data["tasks"]), 2)
++        self.assertEqual(self.b.store.data["sessions"], {})
+ 
+     def test_markerset_command_and_shape_filter(self):
+-        argv, _ = command(self.c, self.b.store, "franka.nokov.record", {}, self.root)
+-        self.assertEqual(argv[argv.index("--plane") + 1], "ribbon")
++        for mode in ("monitor", "record"):
++            with self.subTest(mode=mode):
++                argv, _ = command(self.c, self.b.store, "franka.nokov." + mode, {}, self.root)
++                self.assertEqual(argv[argv.index("--plane") + 1], "ribbon_1021")
++        argv, _ = command(self.c, self.b.store, "franka.nokov.list", {}, self.root)
++        self.assertNotIn("--plane", argv)
+         p = self.b.store.root / "markers.csv"
+         p.write_text("source,set_name,wall_unix_ns,frame,wall_iso,marker_name,x_mm,y_mm,z_mm\n"
+                      "markerset,ribbon+y,200,2,now,old,9,9,9\n"
+-                     "markerset,ribbon,100,1,now,+y01,1,2,3\n"
+-                     "markerset,ribbon,100,1,now,-y01,4,5,6\n")
++                     "markerset,ribbon,200,2,now,old1,9,9,9\n"
++                     "markerset,ribbon,200,2,now,old2,9,9,9\n"
++                     "markerset,x1,200,2,now,Marker2,9,9,9\n"
++                     "markerset,x0,200,2,now,Marker3,9,9,9\n"
++                     "rigidbody,ribbon_1021,200,2,now,body,9,9,9\n"
++                     "markerset,ribbon_1021,100,1,now,Marker1,1,2,3\n"
++                     "markerset,ribbon_1021,100,1,now,Marker2,4,5,6\n"
++                     "markerset,ribbon_1021,200,2,now,Marker1,7,8,9\n"
++                     "markerset,ribbon_1021,200,2,now,Marker2,nan,8,9\n")
+         d = shape_extract(self.b.store, self.b.store.register(p))
+-        self.assertEqual(d["set_name"], "ribbon")
++        self.assertEqual(d["set_name"], "ribbon_1021")
+         self.assertEqual(d["n_visible"], 2)
+         self.assertEqual(d["frame"], 1)
++        self.assertEqual(d["record_last_frame"], 2)
++        self.assertEqual([v["xyz_mm"] for v in d["points"]], [[1, 2, 3], [4, 5, 6]])
++        self.assertEqual(d["coordinate_frame"], "mocap_world")
++        self.assertEqual(d["unit"], "mm")
++
++    def test_shape_extraction_does_not_relabel_legacy_or_endpoint_assets(self):
++        p = self.b.store.root / "legacy_markers.csv"
++        for asset in ("ribbon", "ribbon+y", "x0", "x1"):
++            with self.subTest(asset=asset):
++                p.write_text("source,set_name,wall_unix_ns,frame,wall_iso,marker_name,x_mm,y_mm,z_mm\n"
++                             f"markerset,{asset},100,1,now,Marker1,1,2,3\n"
++                             f"markerset,{asset},100,1,now,Marker2,4,5,6\n")
++                with self.assertRaisesRegex(ValueError, "INSUFFICIENT_VISIBLE_POINTS"):
++                    shape_extract(self.b.store, self.b.store.register(p))
++        self.assertFalse(p.with_suffix(".shape.json").exists())
+ 
+     def test_alignment_constraints_and_preview_command(self):
+         args = {"translation_m": [0, 0, 0], "align_ribbon_up": True, "duration_seconds": 2}
+--- before/tests/test_ribbon_upgrade.py
++++ after/tests/test_ribbon_upgrade.py
+@@ -332,12 +332,15 @@
+         manual = Workspace(self.c).manual
+         vendor = Workspace(self.c).pipeline / "docs/RIBBON.md"
+         vendor.parent.mkdir(parents=True)
+-        vendor.write_text("OLD VENDOR MANUAL USB 摄像头\n")
++        vendor.write_text("UNPACKAGED_VENDOR_MANUAL_SENTINEL\n")
+         page = self.call("manual.read", start_line=2, max_lines=1)
+         self.assertEqual(manual.read_bytes(), (baseline.ROOT / "docs/RIBBON.md").read_bytes())
+         self.assertEqual(page["content"], manual.read_text().splitlines(keepends=True)[1])
+         self.assertNotEqual(page["sha256"], sha256_file(vendor))
+-        self.assertNotIn("USB 摄像头", manual.read_text())
++        self.assertNotIn("UNPACKAGED_VENDOR_MANUAL_SENTINEL", manual.read_text())
++        self.assertIn("版本：2026-10-23", manual.read_text())
++        self.assertIn("flange_58mm_v3", manual.read_text())
++        self.assertIn("ribbon_1021", manual.read_text())
+         self.assertEqual(page["next_line"], 3)
+         self.assertEqual(page["sha256"], sha256_file(manual))
+         with self.assertRaises(Exception):
+@@ -347,7 +350,7 @@
+         layout = Workspace(self.c)
+         layout.tasks.mkdir(parents=True)
+         layout.start_pose.parent.mkdir(parents=True)
+-        layout.start_pose.write_text("joint_positions: [0,0,0,0,0,0,0]\nribbon_mount: flange_8mm_v2\n")
++        layout.start_pose.write_text("joint_positions: [0,0,0,0,0,0,0]\nribbon_mount: flange_58mm_v3\n")
+         data = {"waypoints": [{"position": [0, 0, 0]}], "start_state_file": str(layout.start_pose), "return_to_start_joints": True}
+         original = json.dumps(data, ensure_ascii=False).encode() + b"\n"
+         path = layout.tasks / "experiment.yaml"
+--- before/pipeline/docs/RIBBON.md
++++ after/pipeline/docs/RIBBON.md
+@@ -15,6 +15,10 @@
+ - **第三部分（第 18 章）**：远程托管工具（extension）、任务队列与视频说明。
+ 
+ ## 更新记录
++
++- **2026-10-23 启真平台 Adapter 2.3.11 源码同步**：同步 `flange_58mm_v3` 起点合同、58 mm
++  宽面对齐说明和 `ribbon_1021` 动捕命令/单帧提取，更新随包手册与无硬件回归；保留旧版本包，
++  不修改旧标定/实验数据，不安装或切换服务。修正第 10 章遗漏的旧资产名示例。见 18.2。
+ 
+ - **2026-10-23 动捕资产改名 `ribbon_1021` / `x0` / `x1` + 端板法向偏移**：Nokov 工程里的资产 2026-10-21 深夜
+   改名（`ribbon` → `ribbon_1021`，12 点），2026-10-22 20:48 又把两块端板定名 `x1`（4 点刚体）/ `x0`（3 点刚体）；
+@@ -495,7 +499,7 @@
+ 
+ ### 10. nokov_recorder：观察与记录 ribbon 形状
+ 
+-先看在线资产，确认存在准确名称 `ribbon`：
++先看在线资产，确认存在准确名称 `ribbon_1021`：
+ 
+ ```bash
+ cd /home/zhaoyunzyq/ribbon_ws/pipeline
+@@ -506,7 +510,7 @@
+ 
+ ```bash
+ ~/ribbon_ws/Nokov/recorder/build/nokov_recorder --mode monitor --server 10.1.1.198 \
+-  --plane 'ribbon' --up-axis z
++  --plane 'ribbon_1021' --up-axis z
+ ```
+ 
+ `monitor` 主要显示数值，不是完整的三维形状查看器。单侧点接近共线时，平面法向可能不稳定；`rms/max_dev` 是到最佳拟合平面的距离，不是到两端连线的下垂量。即使 ribbon 已在一个平面里弯曲，平面残差也可能很小。
+@@ -1716,16 +1720,17 @@
+ 代为放行，也不能用提交参数预置放行。`robot_pipeline_acknowledge` 仍只写标定运动确认，默认配置下已不足以让
+ 任务自动启动；`robot_pipeline_queue_status` 如实返回每项的 `approved` 与 `eligible`。
+ 
+-**pro6000 侧影响与待办（2026-10-23）。** ① `franka.manual.read` 读的是**适配器安装包内**的
+-`docs/RIBBON.md` 副本（按版本发布并返回 SHA-256），不读 `~/ribbon_ws/pipeline/docs/RIBBON.md`；本机主手册
+-这次更新到 2026-10-23 后，pro6000 读到的仍是 2026-10-22 14:16 打包的那份，缺少 58 mm 安装端、
+-`ribbon_1021`/`x0`/`x1` 端点口径与操作者放行，要等 adapter 重新打包（2.3.11）才会带上。
+-② `src/core.py` 仍写死旧 markerset 名：`franka.shape.extract` 只接受 `set_name == "ribbon"`（改名后对本次
+-采集会报 `INSUFFICIENT_VISIBLE_POINTS`），`franka.nokov.monitor` / `franka.nokov.record` 固定传
+-`--plane ribbon`（改名后 plane 集合为空）。pipeline 主路径不受影响，因为
+-`nokov_capture_adapter.py` 从 `ribbon_params.yaml` 的 `marker_sets` 取名字。
+-③ 改 ② 还要同步 `tests/test_adapter.py` 里两条 `ribbon` 断言，再重新打包安装。本次只改文档，
+-未改适配器源码、未重新打包、未重启 broker。
++**启真平台 Adapter 2.3.11 源码同步（2026-10-23）。** `adapter.json` 的显式起点标识改为
++`flange_58mm_v3`，宽面对齐说明改为法兰外 58 mm；不手工改写旧起点或复用旧安装 CSV/guard。
++`src/core.py` 的 `franka.nokov.monitor` / `franka.nokov.record` 固定选择 `--plane ribbon_1021`，
++`franka.shape.extract` 只提取 `source=markerset`、`set_name=ribbon_1021` 的有效点，回执也使用新名；
++旧 `ribbon` 数据与端板 `x0` / `x1` 不会混入带身单帧点列。pipeline 主路径仍按现场
++`ribbon_params.yaml` 取资产名；端点锚定与 `plate_normal` 偏移由原生后处理负责。
++`franka.manual.read` 读取随该版本发布的 `docs/RIBBON.md` 副本及其 SHA-256，不实时读取主手册。
++相关测试与随包手册一同更新，已完成 AMD64/ARM64 无硬件回归、真实 YAML 解析补测及
++Connector/handler/broker 替身烟测；源码更新和生成包不代表安装或生效，本次未切换已安装版本、
++未重启 broker、未同步平台能力、未连接或驱动设备。
++网关队列及 extension 工具与本 Adapter 是不同入口；本 Adapter 不新增 `approve` 或检查点复用操作。
+ 
+ **三条输入路径不能混用。** `prepare_robot_pipeline_spec` 从结构化参数生成任务规格；`prepare_robot_pipeline_remote_task` 按路径读取 r9000p 上已有的任务 YAML；已有 `plan`/`prepare` 运行用 `prepare_robot_pipeline_from_run`。任务已经是文件时不要用结构化入口重新描述（容易漏字段或改掉语义），已有运行也不要重新提交 task YAML。三条路径最终都经 `robot_pipeline_submit` 登记为同一种不可变任务，再 `robot_pipeline_start` 显式启动；启动仍受运动总开关与串行锁约束，MOVE 提示需用户明确确认，可通过 `robot_pipeline_confirm` 远程发送或 attach 输入。
+ 

@@ -1,0 +1,18 @@
+[Unit]
+Description=Qizhen Linux Edge Runtime
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/qizhen-linux-edge run
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/share/qizhen-edge
+
+[Install]
+WantedBy=default.target

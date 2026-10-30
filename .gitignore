@@ -1,0 +1,15 @@
+# Local backups and Python caches
+/backups/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.DS_Store
+
+# Local credentials and runtime configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+/adapter-source/scripts/config.json

@@ -1,0 +1,1 @@
+{"ok": true, "connector_export_preserves_policy": true, "seven_start_cancel_reconcile_tools_without_extra_card": true, "terminal_response_requires_confirmation": true, "retries_do_not_replay": true, "platform_service": "real_code", "transport": "fixture_only", "hardware_tested": false}

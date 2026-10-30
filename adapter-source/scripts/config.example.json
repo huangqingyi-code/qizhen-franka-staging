@@ -1,0 +1,9 @@
+{
+  "backend": "real",
+  "workspace": "/home/zhaoyunzyq/ribbon_ws",
+  "state_dir": "/home/zhaoyunzyq/.local/share/qizhen-franka",
+  "ros_setup": "/opt/ros/humble/setup.bash",
+  "python_executable": "/usr/bin/python3",
+  "robot_ip": "172.16.0.3",
+  "nokov_server": "10.1.1.198"
+}
